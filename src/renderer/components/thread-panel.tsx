@@ -103,7 +103,7 @@ export function ThreadPanel({
   return (
     <Fragment>
       <div className="pane-header">
-        <h3>Threads</h3>
+        <h3>Notes</h3>
         <span>{threadPreviews.length}</span>
       </div>
 
