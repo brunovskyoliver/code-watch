@@ -89,6 +89,11 @@ export class ProjectService {
     this.db.delete(projectsTable).where(eq(projectsTable.id, projectId)).run();
   }
 
+  async listBranches(projectId: string): Promise<string[]> {
+    const project = await this.getById(projectId);
+    return this.git.listBranches(project.repoPath);
+  }
+
   async updateBaseBranch(projectId: string, baseBranch: string): Promise<ProjectSummary> {
     const project = await this.getById(projectId);
     await this.git.getCommitSha(project.repoPath, baseBranch);

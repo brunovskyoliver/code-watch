@@ -13,6 +13,7 @@ import type {
 
 interface AppState {
   projects: ProjectSummary[];
+  baseBranchesByProject: Record<string, string[]>;
   sessionsByProject: Record<string, ReviewSessionSummary[]>;
   activeProjectId: string | null;
   activeSession: ReviewSessionDetail | null;
@@ -35,6 +36,7 @@ interface AppState {
   refreshProject: (projectId: string) => Promise<void>;
   selectSession: (projectId: string, sessionId: string) => Promise<void>;
   selectFile: (filePath: string) => Promise<void>;
+  listBranches: (projectId: string) => Promise<string[]>;
   updateBaseBranch: (projectId: string, baseBranch: string) => Promise<void>;
   beginThread: (anchor: ThreadAnchor) => void;
   selectThread: (threadId: string) => Promise<void>;
@@ -49,6 +51,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   projects: [],
+  baseBranchesByProject: {},
   sessionsByProject: {},
   activeProjectId: null,
   activeSession: null,
@@ -112,6 +115,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           composerAnchor: state.activeProjectId === projectId ? null : state.composerAnchor,
           sessionsByProject: Object.fromEntries(
             Object.entries(state.sessionsByProject).filter(([entryProjectId]) => entryProjectId !== projectId)
+          ),
+          baseBranchesByProject: Object.fromEntries(
+            Object.entries(state.baseBranchesByProject).filter(([entryProjectId]) => entryProjectId !== projectId)
           )
         };
       });
@@ -235,6 +241,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
     } catch (error) {
       set({ loadingDiff: false, loadingThread: false, error: toErrorMessage(error) });
+    }
+  },
+  listBranches: async (projectId) => {
+    try {
+      const branches = await window.codeWatch.projects.listBranches(projectId);
+      set((state) => ({
+        baseBranchesByProject: {
+          ...state.baseBranchesByProject,
+          [projectId]: branches
+        }
+      }));
+      return branches;
+    } catch (error) {
+      set({ error: toErrorMessage(error) });
+      return [];
     }
   },
   updateBaseBranch: async (projectId, baseBranch) => {
