@@ -102,11 +102,6 @@ export function ThreadPanel({
 
   return (
     <Fragment>
-      <div className="pane-header">
-        <h3>Notes</h3>
-        <span>{threadPreviews.length}</span>
-      </div>
-
       {!filePath ? (
         <EmptyState title="Select a file" body="Thread previews appear once a changed file is selected." />
       ) : (
@@ -134,6 +129,7 @@ export function ThreadPanel({
 
                 const thread = item.thread;
                 const latestComment = thread.latestComments.at(-1);
+                const activityAt = latestComment?.updatedAt ?? latestComment?.createdAt ?? thread.resolvedAt ?? thread.createdAt;
                 const active = activeThreadPreview?.id === thread.id;
                 return (
                   <button
@@ -153,7 +149,7 @@ export function ThreadPanel({
                       ) : (
                         <small>Up to date</small>
                       )}
-                      <time>{formatTimestamp(thread.lastActivityAt)}</time>
+                      <time>{formatTimestamp(activityAt)}</time>
                     </div>
                   </button>
                 );
