@@ -1,6 +1,5 @@
 import {
   type CSSProperties,
-  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   startTransition,
@@ -38,8 +37,8 @@ interface FlattenedDiffRows {
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
 const REVIEW_LAYOUT_KEY = "code-watch.review-layout.v1";
-const MIN_SIDEBAR_WIDTH = 220;
-const MAX_SIDEBAR_WIDTH = 420;
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
 const MAX_RENDERED_DIFF_LINES = 1000;
 const MIN_PANE_WIDTH = 180;
@@ -88,11 +87,8 @@ export default function App() {
     clearError
   } = useAppStore();
 
-  const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [sidebarWidth, setSidebarWidth] = useState(248);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
-  const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
-  const [previewPaneOrder, setPreviewPaneOrder] = useState<ReviewPaneId[] | null>(null);
-  const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<{
@@ -116,7 +112,7 @@ export default function App() {
     branchSet.add(activeProject.defaultBaseBranch);
     return [...branchSet].sort((a, b) => a.localeCompare(b));
   }, [activeProject, baseBranchesByProject]);
-  const effectivePaneOrder = previewPaneOrder ?? reviewLayout.order;
+  const effectivePaneOrder = reviewLayout.order;
   const visibleReviewPanes = useMemo(
     () => effectivePaneOrder.filter((paneId) => reviewLayout.visibility[paneId]),
     [effectivePaneOrder, reviewLayout.visibility]
@@ -342,92 +338,14 @@ export default function App() {
     setReviewLayout((previous) => setReviewPaneVisibility(previous, paneId, !previous.visibility[paneId]));
   };
 
-  const resetPaneLayout = () => {
-    setDraggedPaneId(null);
-    setPreviewPaneOrder(null);
-    setDropTargetPaneId(null);
-    setReviewLayout(createDefaultReviewLayout());
-  };
-
-  const handlePaneTitleDragStart = (event: ReactDragEvent<HTMLElement>, paneId: ReviewPaneId) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", paneId);
-    setDraggedPaneId(paneId);
-    setPreviewPaneOrder(reviewLayout.order);
-    setDropTargetPaneId(null);
-  };
-
-  const handlePaneTitleDragOver = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
-    if (!draggedPaneId || draggedPaneId === paneId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setPreviewPaneOrder((previous) => reorderPaneOrder(previous ?? reviewLayout.order, draggedPaneId, paneId));
-    setDropTargetPaneId(paneId);
-  };
-
-  const commitPaneTitleDrag = () => {
-    if (draggedPaneId && previewPaneOrder) {
-      setReviewLayout((previous) => ({
-        ...previous,
-        order: previewPaneOrder
-      }));
-    }
-
-    setDraggedPaneId(null);
-    setPreviewPaneOrder(null);
-    setDropTargetPaneId(null);
-  };
-
-  const handlePaneTitleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    commitPaneTitleDrag();
-  };
-
-  const handlePaneTitleDragEnd = () => {
-    commitPaneTitleDrag();
-  };
-
-  const handlePaneTitleDragLeave = (paneId: ReviewPaneId) => {
-    if (dropTargetPaneId === paneId) {
-      setDropTargetPaneId(null);
-    }
-  };
-
   const renderReviewPane = (paneId: ReviewPaneId) => {
     if (paneId === "files") {
-      const hideDisabled = reviewLayout.visibility[paneId] && visibleReviewPanes.length <= 1;
       return (
         <section key={paneId} className="review-pane file-pane">
-          <div
-            className={`pane-header ${draggedPaneId === paneId ? "pane-header-dragging" : ""} ${
-              dropTargetPaneId === paneId ? "pane-header-drop-target" : ""
-            }`}
-            onDragOver={(event) => handlePaneTitleDragOver(event, paneId)}
-            onDragLeave={() => handlePaneTitleDragLeave(paneId)}
-            onDrop={handlePaneTitleDrop}
-          >
-            <h3
-              className="pane-title-drag"
-              draggable
-              title="Drag to reorder panes"
-              onDragStart={(event) => handlePaneTitleDragStart(event, paneId)}
-              onDragEnd={handlePaneTitleDragEnd}
-            >
-              Files
-            </h3>
+          <div className="pane-header">
+            <h3>Files</h3>
             <div className="pane-header-actions">
               <span>{files.length}</span>
-              <button
-                type="button"
-                className="view-toggle"
-                disabled={hideDisabled}
-                onClick={() => togglePaneVisibility(paneId)}
-              >
-                {reviewLayout.visibility[paneId] ? "Hide" : "Show"}
-              </button>
             </div>
           </div>
           {loadingReview ? (
@@ -440,36 +358,12 @@ export default function App() {
     }
 
     if (paneId === "diff") {
-      const hideDisabled = reviewLayout.visibility[paneId] && visibleReviewPanes.length <= 1;
       return (
         <section key={paneId} className="review-pane diff-pane">
-          <div
-            className={`pane-header ${draggedPaneId === paneId ? "pane-header-dragging" : ""} ${
-              dropTargetPaneId === paneId ? "pane-header-drop-target" : ""
-            }`}
-            onDragOver={(event) => handlePaneTitleDragOver(event, paneId)}
-            onDragLeave={() => handlePaneTitleDragLeave(paneId)}
-            onDrop={handlePaneTitleDrop}
-          >
-            <h3
-              className="pane-title-drag"
-              draggable
-              title="Drag to reorder panes"
-              onDragStart={(event) => handlePaneTitleDragStart(event, paneId)}
-              onDragEnd={handlePaneTitleDragEnd}
-            >
-              {selectedFilePath ?? "Diff"}
-            </h3>
+          <div className="pane-header">
+            <h3>{selectedFilePath ?? "Diff"}</h3>
             <div className="pane-header-actions">
               {loadingDiff ? <span className="loading-pill">Loading</span> : null}
-              <button
-                type="button"
-                className="view-toggle"
-                disabled={hideDisabled}
-                onClick={() => togglePaneVisibility(paneId)}
-              >
-                {reviewLayout.visibility[paneId] ? "Hide" : "Show"}
-              </button>
             </div>
           </div>
           {activeDiff ? (
@@ -489,36 +383,12 @@ export default function App() {
       );
     }
 
-    const hideDisabled = reviewLayout.visibility[paneId] && visibleReviewPanes.length <= 1;
     return (
       <section key={paneId} className="review-pane thread-pane">
-        <div
-          className={`pane-header ${draggedPaneId === paneId ? "pane-header-dragging" : ""} ${
-            dropTargetPaneId === paneId ? "pane-header-drop-target" : ""
-          }`}
-          onDragOver={(event) => handlePaneTitleDragOver(event, paneId)}
-          onDragLeave={() => handlePaneTitleDragLeave(paneId)}
-          onDrop={handlePaneTitleDrop}
-        >
-          <h3
-            className="pane-title-drag"
-            draggable
-            title="Drag to reorder panes"
-            onDragStart={(event) => handlePaneTitleDragStart(event, paneId)}
-            onDragEnd={handlePaneTitleDragEnd}
-          >
-            Notes
-          </h3>
+        <div className="pane-header">
+          <h3>Notes</h3>
           <div className="pane-header-actions">
             <span>{activeThreadPreviews.length}</span>
-            <button
-              type="button"
-              className="view-toggle"
-              disabled={hideDisabled}
-              onClick={() => togglePaneVisibility(paneId)}
-            >
-              {reviewLayout.visibility[paneId] ? "Hide" : "Show"}
-            </button>
           </div>
         </div>
         <ThreadPanel
@@ -553,13 +423,13 @@ export default function App() {
             </div>
           </div>
           <button className="ghost-button" onClick={() => void addProject()} aria-label="Add repository">
-            Add
+            +
           </button>
         </div>
 
         <div className="sidebar-scroll">
           {projects.length === 0 ? (
-            <EmptyState title="No repos" body="Add a local Git repo." actionLabel="Add" onAction={() => void addProject()} />
+            <EmptyState title="No repos" body="Add a local Git repo." actionLabel="+" onAction={() => void addProject()} />
           ) : (
             projects.map((project) => {
               const isActive = project.id === activeProjectId;
@@ -666,10 +536,35 @@ export default function App() {
         ) : activeSession ? (
           <>
             <section className="review-toolbar" aria-label="Review layout controls">
-              <p className="view-controls-copy">Drag pane titles to reorder. Changes snap when you release.</p>
-              <button type="button" className="ghost-button" onClick={resetPaneLayout}>
-                Reset layout
-              </button>
+              <div className="pane-toolbar" role="toolbar" aria-label="Toggle review panes">
+                <button
+                  type="button"
+                  className={`pane-toolbar-button ${reviewLayout.visibility.files ? "pane-toolbar-button-active" : ""}`}
+                  aria-pressed={reviewLayout.visibility.files}
+                  aria-label="Toggle files pane"
+                  onClick={() => togglePaneVisibility("files")}
+                >
+                  <FilesPaneIcon />
+                </button>
+                <button
+                  type="button"
+                  className={`pane-toolbar-button ${reviewLayout.visibility.diff ? "pane-toolbar-button-active" : ""}`}
+                  aria-pressed={reviewLayout.visibility.diff}
+                  aria-label="Toggle diff pane"
+                  onClick={() => togglePaneVisibility("diff")}
+                >
+                  <DiffPaneIcon />
+                </button>
+                <button
+                  type="button"
+                  className={`pane-toolbar-button ${reviewLayout.visibility.threads ? "pane-toolbar-button-active" : ""}`}
+                  aria-pressed={reviewLayout.visibility.threads}
+                  aria-label="Toggle notes pane"
+                  onClick={() => togglePaneVisibility("threads")}
+                >
+                  <NotesPaneIcon />
+                </button>
+              </div>
             </section>
 
             <div ref={reviewLayoutRef} className="review-layout">
@@ -694,7 +589,7 @@ export default function App() {
             </div>
           </>
         ) : (
-          <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="Add" onAction={() => void addProject()} />
+          <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="+" onAction={() => void addProject()} />
         )}
       </main>
 
@@ -826,6 +721,34 @@ function FolderIcon() {
   );
 }
 
+function FilesPaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h10.5" />
+    </svg>
+  );
+}
+
+function DiffPaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 4.5v15m0 0 3-3m-3 3-3-3m9-9h3m-3 6h3" />
+    </svg>
+  );
+}
+
+function NotesPaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6.75 5.25h10.5A2.25 2.25 0 0 1 19.5 7.5v6.75a2.25 2.25 0 0 1-2.25 2.25H12l-3.75 3v-3H6.75A2.25 2.25 0 0 1 4.5 14.25V7.5a2.25 2.25 0 0 1 2.25-2.25Z"
+      />
+    </svg>
+  );
+}
+
 function flattenDiffRows(diff: FileDiff): FlattenedDiffRows {
   const rows: DiffRow[] = [];
   let renderedLineCount = 0;
@@ -868,19 +791,6 @@ function groupThreadsByLine(threadPreviews: ThreadPreview[]): Map<string, Thread
 
 function getThreadKey(oldLine: number | null, newLine: number | null): string {
   return `${oldLine ?? "x"}:${newLine ?? "x"}`;
-}
-
-function reorderPaneOrder(order: ReviewPaneId[], draggedPaneId: ReviewPaneId, targetPaneId: ReviewPaneId): ReviewPaneId[] {
-  const fromIndex = order.indexOf(draggedPaneId);
-  const toIndex = order.indexOf(targetPaneId);
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
-    return order;
-  }
-
-  const nextOrder = [...order];
-  nextOrder.splice(fromIndex, 1);
-  nextOrder.splice(toIndex, 0, draggedPaneId);
-  return nextOrder;
 }
 
 function toAnchor(filePath: string, line: DiffLine): Omit<ThreadAnchor, "sessionId"> {
