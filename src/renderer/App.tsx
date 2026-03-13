@@ -18,10 +18,18 @@ type DiffRow =
   | { type: "hunk"; id: string; header: string }
   | { type: "line"; id: string; line: DiffLine };
 
+interface FlattenedDiffRows {
+  rows: DiffRow[];
+  isTruncated: boolean;
+  renderedLineCount: number;
+  totalLineCount: number;
+}
+
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
 const PROJECT_MENU_OFFSET = 6;
+const MAX_RENDERED_DIFF_LINES = 1000;
 
 export default function App() {
   const {
@@ -514,7 +522,7 @@ function DiffViewer({
   onSelectThread: (threadId: string) => void;
 }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const rows = useMemo(() => flattenDiffRows(diff), [diff]);
+  const { rows, isTruncated, renderedLineCount, totalLineCount } = useMemo(() => flattenDiffRows(diff), [diff]);
   const threadMap = useMemo(() => groupThreadsByLine(threadPreviews), [threadPreviews]);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -533,62 +541,69 @@ function DiffViewer({
   }
 
   return (
-    <div ref={parentRef} className="virtual-scroll diff-scroll">
-      <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const row = rows[virtualRow.index];
-          if (!row) {
-            return null;
-          }
+    <Fragment>
+      {isTruncated ? (
+        <div className="diff-truncate-notice">
+          Showing first {renderedLineCount} of {totalLineCount} lines for performance.
+        </div>
+      ) : null}
+      <div ref={parentRef} className="virtual-scroll diff-scroll">
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index];
+            if (!row) {
+              return null;
+            }
 
-          if (row.type === "hunk") {
-            return (
-              <div
-                key={row.id}
-                className="diff-hunk-row"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                {row.header}
-              </div>
-            );
-          }
-
-          const threadKey = getThreadKey(row.line.oldLineNumber, row.line.newLineNumber);
-          const threads = threadMap.get(threadKey) ?? [];
-          const firstThread = threads[0];
-          const anchor = toAnchor(diff.filePath, row.line);
-          const canThread = row.line.oldLineNumber !== null || row.line.newLineNumber !== null;
-
-          return (
-            <button
-              key={row.id}
-              className={`diff-line diff-line-${row.line.kind}`}
-              style={{ transform: `translateY(${virtualRow.start}px)` }}
-              onClick={() => {
-                if (canThread) {
-                  onCreateThread({ ...anchor, sessionId });
-                }
-              }}
-            >
-              <span className="line-number">{row.line.oldLineNumber ?? ""}</span>
-              <span className="line-number">{row.line.newLineNumber ?? ""}</span>
-              <code>{row.line.kind === "add" ? "+" : row.line.kind === "delete" ? "-" : " "}{row.line.text}</code>
-              {firstThread ? (
-                <span
-                  className="thread-chip"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectThread(firstThread.id);
-                  }}
+            if (row.type === "hunk") {
+              return (
+                <div
+                  key={row.id}
+                  className="diff-hunk-row"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
                 >
-                  {threads.length}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
+                  {row.header}
+                </div>
+              );
+            }
+
+            const threadKey = getThreadKey(row.line.oldLineNumber, row.line.newLineNumber);
+            const threads = threadMap.get(threadKey) ?? [];
+            const firstThread = threads[0];
+            const anchor = toAnchor(diff.filePath, row.line);
+            const canThread = row.line.oldLineNumber !== null || row.line.newLineNumber !== null;
+
+            return (
+              <button
+                key={row.id}
+                className={`diff-line diff-line-${row.line.kind}`}
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                onClick={() => {
+                  if (canThread) {
+                    onCreateThread({ ...anchor, sessionId });
+                  }
+                }}
+              >
+                <span className="line-number">{row.line.oldLineNumber ?? ""}</span>
+                <span className="line-number">{row.line.newLineNumber ?? ""}</span>
+                <code>{row.line.kind === "add" ? "+" : row.line.kind === "delete" ? "-" : " "}{row.line.text}</code>
+                {firstThread ? (
+                  <span
+                    className="thread-chip"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectThread(firstThread.id);
+                    }}
+                  >
+                    {threads.length}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </Fragment>
   );
 }
 
@@ -806,15 +821,33 @@ function FolderIcon() {
   );
 }
 
-function flattenDiffRows(diff: FileDiff): DiffRow[] {
+function flattenDiffRows(diff: FileDiff): FlattenedDiffRows {
   const rows: DiffRow[] = [];
+  let renderedLineCount = 0;
+  let totalLineCount = 0;
+
   for (const hunk of diff.hunks) {
+    totalLineCount += hunk.lines.length;
+    if (renderedLineCount >= MAX_RENDERED_DIFF_LINES) {
+      continue;
+    }
+
     rows.push({ type: "hunk", id: `${hunk.id}:header`, header: hunk.header });
     for (const line of hunk.lines) {
+      if (renderedLineCount >= MAX_RENDERED_DIFF_LINES) {
+        break;
+      }
       rows.push({ type: "line", id: line.id, line });
+      renderedLineCount += 1;
     }
   }
-  return rows;
+
+  return {
+    rows,
+    isTruncated: totalLineCount > renderedLineCount,
+    renderedLineCount,
+    totalLineCount
+  };
 }
 
 function groupThreadsByLine(threadPreviews: ThreadPreview[]): Map<string, ThreadPreview[]> {
