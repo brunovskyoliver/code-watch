@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetAppStore, useAppStore } from "@renderer/store/app-store";
+import { useAppStore } from "@renderer/store/app-store";
 import type {
   ChangedFile,
   CodeWatchApi,
+  FileDiff,
   PaginatedComments,
-  PaginatedFileDiff,
   ProjectSummary,
   ReviewOpenResult,
   ReviewSessionDetail,
@@ -62,7 +62,7 @@ const files: ChangedFile[] = [
   }
 ];
 
-const emptyDiff: PaginatedFileDiff = {
+const emptyDiff: FileDiff = {
   filePath: "src/app.ts",
   oldPath: "src/app.ts",
   newPath: "src/app.ts",
@@ -71,10 +71,7 @@ const emptyDiff: PaginatedFileDiff = {
     additions: 3,
     deletions: 1
   },
-  rows: [],
-  nextCursor: null,
-  hasMore: false,
-  totalRowCount: 0
+  hunks: []
 };
 
 const emptyThreadPage: PaginatedComments = {
@@ -85,7 +82,6 @@ const emptyThreadPage: PaginatedComments = {
 };
 
 describe("app-store", () => {
-  let currentProject = makeProject("head_live");
   let liveResult: ReviewOpenResult = {
     created: false,
     detail: makeDetail("session_live", "head_live")
@@ -96,7 +92,6 @@ describe("app-store", () => {
   ];
 
   beforeEach(() => {
-    currentProject = makeProject("head_live");
     liveResult = {
       created: false,
       detail: makeDetail("session_live", "head_live")
@@ -107,9 +102,10 @@ describe("app-store", () => {
       projects: {
         pickDirectory: vi.fn(async () => null),
         add: vi.fn(),
-        list: vi.fn(async () => [currentProject]),
+        list: vi.fn(async () => [makeProject("head_live")]),
         remove: vi.fn(async () => undefined),
-        updateBaseBranch: vi.fn(async () => currentProject)
+        listBranches: vi.fn(async () => ["main", "origin/main"]),
+        updateBaseBranch: vi.fn(async () => makeProject("head_live"))
       },
       reviews: {
         open: vi.fn(async () => liveResult),
@@ -140,18 +136,17 @@ describe("app-store", () => {
       writable: true
     });
 
-    resetAppStore();
+    useAppStore.setState(useAppStore.getInitialState(), true);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("keeps a pinned session selected while refreshing the live session in the background", async () => {
+  it("switches back to the live session when the active project is refreshed", async () => {
     await useAppStore.getState().selectProject("project_1");
     await useAppStore.getState().selectSession("project_1", "session_pinned");
 
-    currentProject = makeProject("head_new");
     liveResult = {
       created: true,
       detail: makeDetail("session_live_new", "head_new")
@@ -161,9 +156,8 @@ describe("app-store", () => {
     await useAppStore.getState().refreshProject("project_1");
 
     const state = useAppStore.getState();
-    expect(state.reviewMode).toBe("pinned");
-    expect(state.activeSession?.session.id).toBe("session_pinned");
-    expect(state.liveSessionId).toBe("session_live_new");
-    expect(state.projects[0]?.headSha).toBe("head_new");
+    expect(state.activeSession?.session.id).toBe("session_live_new");
+    expect(state.sessionsByProject.project_1?.at(0)?.id).toBe("session_live_new");
+    expect(state.selectedFilePath).toBe("src/app.ts");
   });
 });

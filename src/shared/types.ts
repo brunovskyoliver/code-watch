@@ -170,6 +170,7 @@ export interface CodeWatchApi {
     add: (repoPath: string) => Promise<ProjectSummary>;
     list: () => Promise<ProjectSummary[]>;
     remove: (projectId: string) => Promise<void>;
+    listBranches: (projectId: string) => Promise<string[]>;
     updateBaseBranch: (projectId: string, baseBranch: string) => Promise<ProjectSummary>;
   };
   reviews: {

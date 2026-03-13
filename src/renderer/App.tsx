@@ -24,6 +24,7 @@ const MAX_SIDEBAR_WIDTH = 420;
 export default function App() {
   const {
     projects,
+    baseBranchesByProject,
     sessionsByProject,
     activeProjectId,
     activeSession,
@@ -46,6 +47,7 @@ export default function App() {
     refreshProject,
     selectSession,
     selectFile,
+    listBranches,
     updateBaseBranch,
     beginThread,
     selectThread,
@@ -59,10 +61,23 @@ export default function App() {
   } = useAppStore();
 
   const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
+  const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
+  const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
   const deferredFilePath = useDeferredValue(selectedFilePath);
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
   const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const baseBranchOptions = useMemo(() => {
+    if (!activeProject) {
+      return [];
+    }
+
+    const availableBranches = baseBranchesByProject[activeProject.id] ?? [];
+    const branchSet = new Set(availableBranches);
+    branchSet.add(activeProject.defaultBaseBranch);
+    return [...branchSet].sort((a, b) => a.localeCompare(b));
+  }, [activeProject, baseBranchesByProject]);
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
 
   useEffect(() => {
@@ -105,6 +120,40 @@ export default function App() {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
 
+  useEffect(() => {
+    setBaseBranchMenuOpen(false);
+    setLoadingBaseBranches(false);
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (!isBaseBranchMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (!baseBranchMenuRef.current?.contains(target)) {
+        setBaseBranchMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setBaseBranchMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isBaseBranchMenuOpen]);
+
   useEffect(
     () => () => {
       document.body.classList.remove("is-resizing");
@@ -131,6 +180,34 @@ export default function App() {
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+  };
+
+  const toggleBaseBranchMenu = () => {
+    if (!activeProject) {
+      return;
+    }
+
+    if (isBaseBranchMenuOpen) {
+      setBaseBranchMenuOpen(false);
+      return;
+    }
+
+    setBaseBranchMenuOpen(true);
+    setLoadingBaseBranches(true);
+    void listBranches(activeProject.id).finally(() => {
+      setLoadingBaseBranches(false);
+    });
+  };
+
+  const selectBaseBranch = (branch: string) => {
+    if (!activeProject) {
+      return;
+    }
+
+    setBaseBranchMenuOpen(false);
+    if (branch !== activeProject.defaultBaseBranch) {
+      void updateBaseBranch(activeProject.id, branch);
+    }
   };
 
   return (
@@ -229,19 +306,43 @@ export default function App() {
           {activeSession && activeProject ? (
             <div className="topbar-meta">
               <span className="badge">{activeSession.project.currentBranch ?? "head"}</span>
-              <label className="base-branch-control">
+              <div className="base-branch-control" ref={baseBranchMenuRef}>
                 <span>Base</span>
-                <input
+                <button
+                  type="button"
+                  className="base-branch-trigger"
                   aria-label="Base branch"
-                  defaultValue={activeProject.defaultBaseBranch}
-                  onBlur={(event) => {
-                    const value = event.currentTarget.value.trim();
-                    if (value && value !== activeProject.defaultBaseBranch) {
-                      void updateBaseBranch(activeProject.id, value);
-                    }
-                  }}
-                />
-              </label>
+                  aria-expanded={isBaseBranchMenuOpen}
+                  aria-haspopup="listbox"
+                  onClick={toggleBaseBranchMenu}
+                >
+                  {activeProject.defaultBaseBranch}
+                </button>
+                {isBaseBranchMenuOpen ? (
+                  <div className="base-branch-menu" role="listbox" aria-label="Branch list">
+                    {loadingBaseBranches ? (
+                      <p className="base-branch-menu-state">Loading branches...</p>
+                    ) : baseBranchOptions.length > 0 ? (
+                      baseBranchOptions.map((branch) => (
+                        <button
+                          key={branch}
+                          type="button"
+                          role="option"
+                          aria-selected={branch === activeProject.defaultBaseBranch}
+                          className={`base-branch-option ${
+                            branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
+                          }`}
+                          onClick={() => selectBaseBranch(branch)}
+                        >
+                          {branch}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="base-branch-menu-state">No branches found.</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
               {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
             </div>
           ) : null}

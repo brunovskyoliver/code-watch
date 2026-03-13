@@ -13,6 +13,7 @@ const api: CodeWatchApi = {
     add: (repoPath) => ipcRenderer.invoke("projects:add", repoPath),
     list: () => ipcRenderer.invoke("projects:list"),
     remove: (projectId) => ipcRenderer.invoke("projects:remove", projectId),
+    listBranches: (projectId) => ipcRenderer.invoke("projects:listBranches", projectId),
     updateBaseBranch: (projectId, baseBranch) => ipcRenderer.invoke("projects:updateBaseBranch", projectId, baseBranch)
   },
   reviews: {
