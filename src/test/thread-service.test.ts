@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { AppDatabase } from "@main/db/client";
 import { ThreadService } from "@main/services/threads";
 
 function createTestDatabase() {
@@ -42,9 +41,9 @@ function createTestDatabase() {
             .slice(offset ?? 0, (offset ?? 0) + (limit ?? comments.length))
       }
     }
-  } satisfies Pick<AppDatabase, "query">;
+  };
 
-  return { db: db as AppDatabase };
+  return { db: db as any };
 }
 
 describe("ThreadService", () => {

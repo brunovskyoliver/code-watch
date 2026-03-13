@@ -17,9 +17,7 @@ import { ThreadPanel } from "@renderer/components/thread-panel";
 import {
   createDefaultReviewLayout,
   getNormalizedPaneSizes,
-  getVisibleReviewPanes,
   parseStoredReviewLayout,
-  reorderReviewPanes,
   setReviewPaneVisibility,
   type ReviewLayoutState,
   type ReviewPaneId
@@ -93,6 +91,7 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(288);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
   const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
+  const [previewPaneOrder, setPreviewPaneOrder] = useState<ReviewPaneId[] | null>(null);
   const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
@@ -117,7 +116,11 @@ export default function App() {
     branchSet.add(activeProject.defaultBaseBranch);
     return [...branchSet].sort((a, b) => a.localeCompare(b));
   }, [activeProject, baseBranchesByProject]);
-  const visibleReviewPanes = useMemo(() => getVisibleReviewPanes(reviewLayout), [reviewLayout]);
+  const effectivePaneOrder = previewPaneOrder ?? reviewLayout.order;
+  const visibleReviewPanes = useMemo(
+    () => effectivePaneOrder.filter((paneId) => reviewLayout.visibility[paneId]),
+    [effectivePaneOrder, reviewLayout.visibility]
+  );
   const normalizedPaneSizes = useMemo(() => getNormalizedPaneSizes(reviewLayout), [reviewLayout]);
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
 
@@ -341,46 +344,91 @@ export default function App() {
 
   const resetPaneLayout = () => {
     setDraggedPaneId(null);
+    setPreviewPaneOrder(null);
     setDropTargetPaneId(null);
     setReviewLayout(createDefaultReviewLayout());
   };
 
-  const handlePaneDragStart = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
+  const handlePaneTitleDragStart = (event: ReactDragEvent<HTMLElement>, paneId: ReviewPaneId) => {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", paneId);
     setDraggedPaneId(paneId);
+    setPreviewPaneOrder(reviewLayout.order);
     setDropTargetPaneId(null);
   };
 
-  const handlePaneDragOver = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
+  const handlePaneTitleDragOver = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
     if (!draggedPaneId || draggedPaneId === paneId) {
       return;
     }
 
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
+    setPreviewPaneOrder((previous) => reorderPaneOrder(previous ?? reviewLayout.order, draggedPaneId, paneId));
     setDropTargetPaneId(paneId);
   };
 
-  const handlePaneDrop = (paneId: ReviewPaneId) => {
-    if (!draggedPaneId || draggedPaneId === paneId) {
-      setDraggedPaneId(null);
-      setDropTargetPaneId(null);
-      return;
+  const commitPaneTitleDrag = () => {
+    if (draggedPaneId && previewPaneOrder) {
+      setReviewLayout((previous) => ({
+        ...previous,
+        order: previewPaneOrder
+      }));
     }
 
-    setReviewLayout((previous) => reorderReviewPanes(previous, draggedPaneId, paneId));
     setDraggedPaneId(null);
+    setPreviewPaneOrder(null);
     setDropTargetPaneId(null);
+  };
+
+  const handlePaneTitleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    commitPaneTitleDrag();
+  };
+
+  const handlePaneTitleDragEnd = () => {
+    commitPaneTitleDrag();
+  };
+
+  const handlePaneTitleDragLeave = (paneId: ReviewPaneId) => {
+    if (dropTargetPaneId === paneId) {
+      setDropTargetPaneId(null);
+    }
   };
 
   const renderReviewPane = (paneId: ReviewPaneId) => {
     if (paneId === "files") {
+      const hideDisabled = reviewLayout.visibility[paneId] && visibleReviewPanes.length <= 1;
       return (
         <section key={paneId} className="review-pane file-pane">
-          <div className="pane-header">
-            <h3>Files</h3>
-            <span>{files.length}</span>
+          <div
+            className={`pane-header ${draggedPaneId === paneId ? "pane-header-dragging" : ""} ${
+              dropTargetPaneId === paneId ? "pane-header-drop-target" : ""
+            }`}
+            onDragOver={(event) => handlePaneTitleDragOver(event, paneId)}
+            onDragLeave={() => handlePaneTitleDragLeave(paneId)}
+            onDrop={handlePaneTitleDrop}
+          >
+            <h3
+              className="pane-title-drag"
+              draggable
+              title="Drag to reorder panes"
+              onDragStart={(event) => handlePaneTitleDragStart(event, paneId)}
+              onDragEnd={handlePaneTitleDragEnd}
+            >
+              Files
+            </h3>
+            <div className="pane-header-actions">
+              <span>{files.length}</span>
+              <button
+                type="button"
+                className="view-toggle"
+                disabled={hideDisabled}
+                onClick={() => togglePaneVisibility(paneId)}
+              >
+                {reviewLayout.visibility[paneId] ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
           {loadingReview ? (
             <LoadingState label="Refreshing" />
@@ -392,11 +440,37 @@ export default function App() {
     }
 
     if (paneId === "diff") {
+      const hideDisabled = reviewLayout.visibility[paneId] && visibleReviewPanes.length <= 1;
       return (
         <section key={paneId} className="review-pane diff-pane">
-          <div className="pane-header">
-            <h3>{selectedFilePath ?? "Diff"}</h3>
-            {loadingDiff ? <span className="loading-pill">Loading</span> : null}
+          <div
+            className={`pane-header ${draggedPaneId === paneId ? "pane-header-dragging" : ""} ${
+              dropTargetPaneId === paneId ? "pane-header-drop-target" : ""
+            }`}
+            onDragOver={(event) => handlePaneTitleDragOver(event, paneId)}
+            onDragLeave={() => handlePaneTitleDragLeave(paneId)}
+            onDrop={handlePaneTitleDrop}
+          >
+            <h3
+              className="pane-title-drag"
+              draggable
+              title="Drag to reorder panes"
+              onDragStart={(event) => handlePaneTitleDragStart(event, paneId)}
+              onDragEnd={handlePaneTitleDragEnd}
+            >
+              {selectedFilePath ?? "Diff"}
+            </h3>
+            <div className="pane-header-actions">
+              {loadingDiff ? <span className="loading-pill">Loading</span> : null}
+              <button
+                type="button"
+                className="view-toggle"
+                disabled={hideDisabled}
+                onClick={() => togglePaneVisibility(paneId)}
+              >
+                {reviewLayout.visibility[paneId] ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
           {activeDiff ? (
             <DiffViewer
@@ -415,8 +489,38 @@ export default function App() {
       );
     }
 
+    const hideDisabled = reviewLayout.visibility[paneId] && visibleReviewPanes.length <= 1;
     return (
       <section key={paneId} className="review-pane thread-pane">
+        <div
+          className={`pane-header ${draggedPaneId === paneId ? "pane-header-dragging" : ""} ${
+            dropTargetPaneId === paneId ? "pane-header-drop-target" : ""
+          }`}
+          onDragOver={(event) => handlePaneTitleDragOver(event, paneId)}
+          onDragLeave={() => handlePaneTitleDragLeave(paneId)}
+          onDrop={handlePaneTitleDrop}
+        >
+          <h3
+            className="pane-title-drag"
+            draggable
+            title="Drag to reorder panes"
+            onDragStart={(event) => handlePaneTitleDragStart(event, paneId)}
+            onDragEnd={handlePaneTitleDragEnd}
+          >
+            Notes
+          </h3>
+          <div className="pane-header-actions">
+            <span>{activeThreadPreviews.length}</span>
+            <button
+              type="button"
+              className="view-toggle"
+              disabled={hideDisabled}
+              onClick={() => togglePaneVisibility(paneId)}
+            >
+              {reviewLayout.visibility[paneId] ? "Hide" : "Show"}
+            </button>
+          </div>
+        </div>
         <ThreadPanel
           filePath={selectedFilePath}
           threadPreviews={activeThreadPreviews}
@@ -562,62 +666,7 @@ export default function App() {
         ) : activeSession ? (
           <>
             <section className="review-toolbar" aria-label="Review layout controls">
-              <div className="view-controls">
-                <p className="view-controls-copy">Drag views to reorder. Toggle any panel on or off.</p>
-                <div className="view-chip-row">
-                  {reviewLayout.order.map((paneId) => {
-                    const isVisible = reviewLayout.visibility[paneId];
-                    const hideDisabled = isVisible && visibleReviewPanes.length <= 1;
-                    return (
-                      <div
-                        key={paneId}
-                        className={`view-chip ${isVisible ? "view-chip-visible" : "view-chip-hidden"} ${
-                          draggedPaneId === paneId ? "view-chip-dragging" : ""
-                        } ${dropTargetPaneId === paneId ? "view-chip-drop-target" : ""}`}
-                        draggable
-                        onDragStart={(event) => handlePaneDragStart(event, paneId)}
-                        onDragOver={(event) => handlePaneDragOver(event, paneId)}
-                        onDragEnter={() => {
-                          if (draggedPaneId && draggedPaneId !== paneId) {
-                            setDropTargetPaneId(paneId);
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dropTargetPaneId === paneId) {
-                            setDropTargetPaneId(null);
-                          }
-                        }}
-                        onDragEnd={() => {
-                          setDraggedPaneId(null);
-                          setDropTargetPaneId(null);
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          handlePaneDrop(paneId);
-                        }}
-                      >
-                        <div className="view-chip-main">
-                          <span className="view-chip-grip" aria-hidden="true">
-                            ::
-                          </span>
-                          <span>{paneLabels[paneId]}</span>
-                        </div>
-                        <div className="view-chip-actions">
-                          <span className="view-chip-size">{isVisible ? `${Math.round(normalizedPaneSizes[paneId])}%` : "Hidden"}</span>
-                          <button
-                            type="button"
-                            className="view-chip-toggle"
-                            disabled={hideDisabled}
-                            onClick={() => togglePaneVisibility(paneId)}
-                          >
-                            {isVisible ? "Hide" : "Show"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <p className="view-controls-copy">Drag pane titles to reorder. Changes snap when you release.</p>
               <button type="button" className="ghost-button" onClick={resetPaneLayout}>
                 Reset layout
               </button>
@@ -819,6 +868,19 @@ function groupThreadsByLine(threadPreviews: ThreadPreview[]): Map<string, Thread
 
 function getThreadKey(oldLine: number | null, newLine: number | null): string {
   return `${oldLine ?? "x"}:${newLine ?? "x"}`;
+}
+
+function reorderPaneOrder(order: ReviewPaneId[], draggedPaneId: ReviewPaneId, targetPaneId: ReviewPaneId): ReviewPaneId[] {
+  const fromIndex = order.indexOf(draggedPaneId);
+  const toIndex = order.indexOf(targetPaneId);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+    return order;
+  }
+
+  const nextOrder = [...order];
+  nextOrder.splice(fromIndex, 1);
+  nextOrder.splice(toIndex, 0, draggedPaneId);
+  return nextOrder;
 }
 
 function toAnchor(filePath: string, line: DiffLine): Omit<ThreadAnchor, "sessionId"> {
