@@ -81,6 +81,17 @@ export class GitService {
     }
   }
 
+  async listBranches(repoPath: string): Promise<string[]> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const output = await this.runGit(rootPath, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]);
+
+    return [...new Set(output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => Boolean(line) && !line.endsWith("/HEAD")))]
+      .sort((a, b) => a.localeCompare(b));
+  }
+
   async getCommitSha(repoPath: string, ref: string): Promise<string> {
     return (await this.runGit(repoPath, ["rev-parse", ref])).trim();
   }
