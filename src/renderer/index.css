@@ -491,8 +491,7 @@ body.is-resizing .sidebar-resizer::before {
   gap: 10px;
 }
 
-.comment-composer textarea,
-.base-branch-control input {
+.comment-composer textarea {
   width: 100%;
   border: 0;
   outline: 0;
@@ -508,18 +507,17 @@ body.is-resizing .sidebar-resizer::before {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.comment-composer textarea::placeholder,
-.base-branch-control input::placeholder {
+.comment-composer textarea::placeholder {
   color: rgba(255, 255, 255, 0.3);
 }
 
-.comment-composer textarea:focus,
-.base-branch-control:focus-within {
+.comment-composer textarea:focus {
   border-color: rgba(255, 255, 255, 0.16);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .base-branch-control {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -535,8 +533,63 @@ body.is-resizing .sidebar-resizer::before {
   font-size: 11px;
 }
 
-.base-branch-control input {
+.base-branch-trigger {
   min-width: 88px;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.base-branch-trigger:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.24);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.base-branch-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 20, 24, 0.97);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.base-branch-option {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.base-branch-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.base-branch-option-active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.base-branch-menu-state {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .empty-state,

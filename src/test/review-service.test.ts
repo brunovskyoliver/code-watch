@@ -153,7 +153,7 @@ function createGitMock() {
 }
 
 describe("ReviewService", () => {
-  it("paginates diff rows and invalidates cache when a new session is created", async () => {
+  it("caches file diffs per session and invalidates cache when a new session is created", async () => {
     const db = createFakeDb();
     const { git, setHeadSha } = createGitMock();
     const dispatch = vi.fn();
@@ -162,18 +162,17 @@ describe("ReviewService", () => {
     const openResult = await service.open("project_1");
     const sessionId = openResult.detail.session.id;
 
-    const pageOne = await service.diff(sessionId, "src/app.ts", "0");
-    expect(pageOne.totalRowCount).toBe(pageOne.rows.length);
-    expect(pageOne.hasMore).toBe(false);
+    const firstDiff = await service.diff(sessionId, "src/app.ts");
+    expect(firstDiff.hunks.length).toBeGreaterThan(0);
     expect(git.getFileDiff).toHaveBeenCalledTimes(1);
 
-    const cachedPage = await service.diff(sessionId, "src/app.ts", "0");
-    expect(cachedPage.rows).toEqual(pageOne.rows);
+    const cachedDiff = await service.diff(sessionId, "src/app.ts");
+    expect(cachedDiff).toEqual(firstDiff);
     expect(git.getFileDiff).toHaveBeenCalledTimes(1);
 
     setHeadSha("head_b");
     const nextSession = await service.open("project_1");
-    await service.diff(nextSession.detail.session.id, "src/app.ts", "0");
+    await service.diff(nextSession.detail.session.id, "src/app.ts");
     expect(git.getFileDiff).toHaveBeenCalledTimes(2);
   });
 });
