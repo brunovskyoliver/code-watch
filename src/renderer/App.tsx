@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   startTransition,
@@ -17,6 +18,7 @@ import {
   createDefaultReviewLayout,
   getNormalizedPaneSizes,
   parseStoredReviewLayout,
+  reorderReviewPanes,
   setReviewPaneVisibility,
   type ReviewLayoutState,
   type ReviewPaneId
@@ -89,6 +91,8 @@ export default function App() {
 
   const [sidebarWidth, setSidebarWidth] = useState(248);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
+  const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
+  const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<{
@@ -221,6 +225,7 @@ export default function App() {
   useEffect(
     () => () => {
       document.body.classList.remove("is-resizing");
+      document.body.classList.remove("is-pane-dragging");
     },
     []
   );
@@ -338,11 +343,58 @@ export default function App() {
     setReviewLayout((previous) => setReviewPaneVisibility(previous, paneId, !previous.visibility[paneId]));
   };
 
+  const clearPaneDragState = () => {
+    document.body.classList.remove("is-pane-dragging");
+    setDraggedPaneId(null);
+    setDropTargetPaneId(null);
+  };
+
+  const beginPaneReorder = (event: ReactDragEvent<HTMLElement>, paneId: ReviewPaneId) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", paneId);
+    document.body.classList.add("is-pane-dragging");
+    setDraggedPaneId(paneId);
+    setDropTargetPaneId(paneId);
+  };
+
+  const handlePaneHeaderDragOver = (event: ReactDragEvent<HTMLElement>, paneId: ReviewPaneId) => {
+    if (!draggedPaneId || draggedPaneId === paneId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dropTargetPaneId !== paneId) {
+      setDropTargetPaneId(paneId);
+    }
+  };
+
+  const handlePaneHeaderDrop = (event: ReactDragEvent<HTMLElement>, paneId: ReviewPaneId) => {
+    if (!draggedPaneId) {
+      return;
+    }
+
+    event.preventDefault();
+    if (draggedPaneId !== paneId) {
+      setReviewLayout((previous) => reorderReviewPanes(previous, draggedPaneId, paneId));
+    }
+    clearPaneDragState();
+  };
+
   const renderReviewPane = (paneId: ReviewPaneId) => {
     if (paneId === "files") {
       return (
         <section key={paneId} className="review-pane file-pane">
-          <div className="pane-header">
+          <div
+            className={`pane-header pane-header-draggable ${
+              draggedPaneId === paneId ? "pane-header-dragging" : ""
+            } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
+            draggable
+            onDragStart={(event) => beginPaneReorder(event, paneId)}
+            onDragOver={(event) => handlePaneHeaderDragOver(event, paneId)}
+            onDrop={(event) => handlePaneHeaderDrop(event, paneId)}
+            onDragEnd={clearPaneDragState}
+          >
             <h3>Files</h3>
             <div className="pane-header-actions">
               <span>{files.length}</span>
@@ -360,7 +412,16 @@ export default function App() {
     if (paneId === "diff") {
       return (
         <section key={paneId} className="review-pane diff-pane">
-          <div className="pane-header">
+          <div
+            className={`pane-header pane-header-draggable ${
+              draggedPaneId === paneId ? "pane-header-dragging" : ""
+            } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
+            draggable
+            onDragStart={(event) => beginPaneReorder(event, paneId)}
+            onDragOver={(event) => handlePaneHeaderDragOver(event, paneId)}
+            onDrop={(event) => handlePaneHeaderDrop(event, paneId)}
+            onDragEnd={clearPaneDragState}
+          >
             <h3>{selectedFilePath ?? "Diff"}</h3>
             <div className="pane-header-actions">
               {loadingDiff ? <span className="loading-pill">Loading</span> : null}
@@ -385,7 +446,16 @@ export default function App() {
 
     return (
       <section key={paneId} className="review-pane thread-pane">
-        <div className="pane-header">
+        <div
+          className={`pane-header pane-header-draggable ${
+            draggedPaneId === paneId ? "pane-header-dragging" : ""
+          } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
+          draggable
+          onDragStart={(event) => beginPaneReorder(event, paneId)}
+          onDragOver={(event) => handlePaneHeaderDragOver(event, paneId)}
+          onDrop={(event) => handlePaneHeaderDrop(event, paneId)}
+          onDragEnd={clearPaneDragState}
+        >
           <h3>Notes</h3>
           <div className="pane-header-actions">
             <span>{activeThreadPreviews.length}</span>
@@ -489,53 +559,7 @@ export default function App() {
           </div>
 
           {activeSession && activeProject ? (
-            <div className="topbar-meta">
-              <div className="base-branch-control" ref={baseBranchMenuRef}>
-                <button
-                  type="button"
-                  className="base-branch-trigger"
-                  aria-label="Base branch"
-                  aria-expanded={isBaseBranchMenuOpen}
-                  aria-haspopup="listbox"
-                  onClick={toggleBaseBranchMenu}
-                >
-                  {activeProject.defaultBaseBranch}
-                </button>
-                {isBaseBranchMenuOpen ? (
-                  <div className="base-branch-menu" role="listbox" aria-label="Branch list">
-                    {loadingBaseBranches ? (
-                      <p className="base-branch-menu-state">Loading branches...</p>
-                    ) : baseBranchOptions.length > 0 ? (
-                      baseBranchOptions.map((branch) => (
-                        <button
-                          key={branch}
-                          type="button"
-                          role="option"
-                          aria-selected={branch === activeProject.defaultBaseBranch}
-                          className={`base-branch-option ${
-                            branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
-                          }`}
-                          onClick={() => selectBaseBranch(branch)}
-                        >
-                          {branch}
-                        </button>
-                      ))
-                    ) : (
-                      <p className="base-branch-menu-state">No branches found.</p>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-              {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
-            </div>
-          ) : null}
-        </header>
-
-        {initializing ? (
-          <LoadingState label="Loading" />
-        ) : activeSession ? (
-          <>
-            <section className="review-toolbar" aria-label="Review layout controls">
+            <div className="topbar-actions">
               <div className="pane-toolbar" role="toolbar" aria-label="Toggle review panes">
                 <button
                   type="button"
@@ -565,29 +589,72 @@ export default function App() {
                   <NotesPaneIcon />
                 </button>
               </div>
-            </section>
-
-            <div ref={reviewLayoutRef} className="review-layout">
-              {visibleReviewPanes.map((paneId, index) => (
-                <div
-                  key={paneId}
-                  className="review-pane-slot"
-                  style={{ flexBasis: `${normalizedPaneSizes[paneId]}%` } satisfies CSSProperties}
-                >
-                  {renderReviewPane(paneId)}
-                  {index < visibleReviewPanes.length - 1 ? (
-                    <div
-                      className="pane-resizer"
-                      role="separator"
-                      aria-label={`Resize ${paneLabels[paneId]} and ${paneLabels[visibleReviewPanes[index + 1]!]}`}
-                      aria-orientation="vertical"
-                      onPointerDown={(event) => beginPaneResize(event, paneId, visibleReviewPanes[index + 1]!)}
-                    />
+              <div className="topbar-meta">
+                <div className="base-branch-control" ref={baseBranchMenuRef}>
+                  <button
+                    type="button"
+                    className="base-branch-trigger"
+                    aria-label="Base branch"
+                    aria-expanded={isBaseBranchMenuOpen}
+                    aria-haspopup="listbox"
+                    onClick={toggleBaseBranchMenu}
+                  >
+                    {activeProject.defaultBaseBranch}
+                  </button>
+                  {isBaseBranchMenuOpen ? (
+                    <div className="base-branch-menu" role="listbox" aria-label="Branch list">
+                      {loadingBaseBranches ? (
+                        <p className="base-branch-menu-state">Loading branches...</p>
+                      ) : baseBranchOptions.length > 0 ? (
+                        baseBranchOptions.map((branch) => (
+                          <button
+                            key={branch}
+                            type="button"
+                            role="option"
+                            aria-selected={branch === activeProject.defaultBaseBranch}
+                            className={`base-branch-option ${
+                              branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
+                            }`}
+                            onClick={() => selectBaseBranch(branch)}
+                          >
+                            {branch}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="base-branch-menu-state">No branches found.</p>
+                      )}
+                    </div>
                   ) : null}
                 </div>
-              ))}
+                {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
+              </div>
             </div>
-          </>
+          ) : null}
+        </header>
+
+        {initializing ? (
+          <LoadingState label="Loading" />
+        ) : activeSession ? (
+          <div ref={reviewLayoutRef} className="review-layout">
+            {visibleReviewPanes.map((paneId, index) => (
+              <div
+                key={paneId}
+                className="review-pane-slot"
+                style={{ flexBasis: `${normalizedPaneSizes[paneId]}%` } satisfies CSSProperties}
+              >
+                {renderReviewPane(paneId)}
+                {index < visibleReviewPanes.length - 1 ? (
+                  <div
+                    className="pane-resizer"
+                    role="separator"
+                    aria-label={`Resize ${paneLabels[paneId]} and ${paneLabels[visibleReviewPanes[index + 1]!]}`}
+                    aria-orientation="vertical"
+                    onPointerDown={(event) => beginPaneResize(event, paneId, visibleReviewPanes[index + 1]!)}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
         ) : (
           <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="+" onAction={() => void addProject()} />
         )}
