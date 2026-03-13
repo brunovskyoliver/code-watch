@@ -1,5 +1,5 @@
 import { hashLine } from "@main/services/utils";
-import type { FileDiff, FileStatus } from "@shared/types";
+import type { DiffRow, FileDiff, FileStatus } from "@shared/types";
 
 interface ParseDiffOptions {
   filePath: string;
@@ -135,6 +135,18 @@ export function parseUnifiedDiff(diffText: string, options: ParseDiffOptions): F
     },
     hunks
   };
+}
+
+export function flattenDiffRows(diff: FileDiff): DiffRow[] {
+  const rows: DiffRow[] = [];
+  for (const hunk of diff.hunks) {
+    rows.push({ type: "hunk", id: `${hunk.id}:header`, header: hunk.header });
+    for (const line of hunk.lines) {
+      rows.push({ type: "line", id: line.id, line });
+    }
+  }
+
+  return rows;
 }
 
 function cleanDiffPath(rawPath: string): string | null {

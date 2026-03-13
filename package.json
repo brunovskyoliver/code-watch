@@ -9,7 +9,8 @@
     "dev": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "test": "vitest run"
+    "test": "node ./node_modules/vitest/vitest.mjs run",
+    "typecheck": "tsc --noEmit"
   },
   "trustedDependencies": [
     "better-sqlite3",

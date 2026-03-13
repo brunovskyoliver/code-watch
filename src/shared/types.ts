@@ -100,6 +100,34 @@ export const fileDiffSchema = z.object({
   hunks: z.array(diffHunkSchema)
 });
 
+export const diffRowSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("hunk"),
+    id: z.string(),
+    header: z.string()
+  }),
+  z.object({
+    type: z.literal("line"),
+    id: z.string(),
+    line: diffLineSchema
+  })
+]);
+
+export const paginatedFileDiffSchema = z.object({
+  filePath: z.string(),
+  oldPath: z.string().nullable(),
+  newPath: z.string().nullable(),
+  isBinary: z.boolean(),
+  stats: z.object({
+    additions: z.number().int().nullable(),
+    deletions: z.number().int().nullable()
+  }),
+  rows: z.array(diffRowSchema),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+  totalRowCount: z.number().int()
+});
+
 export const threadPreviewSchema = z.object({
   id: z.string(),
   sessionId: z.string(),
@@ -109,6 +137,7 @@ export const threadPreviewSchema = z.object({
   latestComments: z.array(commentRecordSchema),
   remainingCommentCount: z.number().int(),
   commentCount: z.number().int(),
+  lastActivityAt: z.number().int(),
   createdAt: z.number().int(),
   resolvedAt: z.number().int().nullable()
 });
@@ -154,6 +183,8 @@ export type ChangedFile = z.infer<typeof changedFileSchema>;
 export type DiffLine = z.infer<typeof diffLineSchema>;
 export type DiffHunk = z.infer<typeof diffHunkSchema>;
 export type FileDiff = z.infer<typeof fileDiffSchema>;
+export type DiffRow = z.infer<typeof diffRowSchema>;
+export type PaginatedFileDiff = z.infer<typeof paginatedFileDiffSchema>;
 export type ThreadPreview = z.infer<typeof threadPreviewSchema>;
 export type PaginatedComments = z.infer<typeof paginatedCommentsSchema>;
 export type ReviewSessionDetail = z.infer<typeof reviewSessionDetailSchema>;
@@ -177,7 +208,7 @@ export interface CodeWatchApi {
     list: (projectId: string) => Promise<ReviewSessionSummary[]>;
     load: (sessionId: string) => Promise<ReviewSessionDetail>;
     files: (sessionId: string) => Promise<ChangedFile[]>;
-    diff: (sessionId: string, filePath: string, cursor?: string) => Promise<FileDiff>;
+    diff: (sessionId: string, filePath: string, cursor?: string) => Promise<PaginatedFileDiff>;
   };
   threads: {
     listForFile: (sessionId: string, filePath: string) => Promise<ThreadPreview[]>;

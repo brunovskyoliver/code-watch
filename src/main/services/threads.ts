@@ -19,7 +19,8 @@ export class ThreadService {
       orderBy: desc(threadsTable.createdAt)
     });
 
-    return Promise.all(threads.map((thread) => this.buildPreview(thread.id)));
+    const previews = await Promise.all(threads.map((thread) => this.buildPreview(thread.id)));
+    return previews.sort((left, right) => right.lastActivityAt - left.lastActivityAt);
   }
 
   async get(threadId: string, cursor?: string): Promise<PaginatedComments> {
@@ -172,6 +173,7 @@ export class ThreadService {
         })),
       remainingCommentCount: Math.max(0, thread.commentCount - latestComments.length),
       commentCount: thread.commentCount,
+      lastActivityAt: latestComments[0]?.createdAt ?? thread.createdAt,
       createdAt: thread.createdAt,
       resolvedAt: thread.resolvedAt
     };

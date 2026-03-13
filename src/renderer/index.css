@@ -79,22 +79,8 @@ button {
 }
 
 .sidebar-scroll {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  position: relative;
   padding: 0 16px 20px;
-}
-
-.project-card {
-  border: 1px solid transparent;
-  border-radius: 18px;
-  background: rgba(24, 25, 28, 0.88);
-  overflow: hidden;
-}
-
-.project-card-active {
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
 }
 
 .project-button,
@@ -115,6 +101,25 @@ button {
   justify-content: space-between;
   gap: 12px;
   padding: 16px;
+}
+
+.sidebar-item {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+}
+
+.project-button.sidebar-item {
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background: rgba(24, 25, 28, 0.88);
+  overflow: hidden;
+  min-height: 88px;
+}
+
+.project-card-active {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
 }
 
 .project-button p,
@@ -147,6 +152,7 @@ button {
   padding: 10px 12px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.035);
+  inset-inline: 10px;
 }
 
 .session-button-active {
@@ -294,6 +300,15 @@ button {
 .thread-chip {
   background: rgba(255, 255, 255, 0.12);
   color: var(--accent-strong);
+  max-width: 280px;
+  justify-content: flex-end;
+}
+
+.thread-chip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
 }
 
 .badge-warning,
@@ -339,6 +354,15 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.thread-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .thread-detail {
@@ -418,6 +442,11 @@ button {
   color: var(--muted);
 }
 
+.compact-empty-state {
+  margin: 8px 0 0;
+  padding: 24px 8px;
+}
+
 .ghost-button,
 .primary-button,
 .danger-button {
@@ -438,6 +467,10 @@ button {
 .danger-button {
   background: rgba(253, 164, 175, 0.12);
   border-color: rgba(253, 164, 175, 0.18);
+}
+
+.sidebar-remove {
+  inset-inline: 10px;
 }
 
 .eyebrow {
@@ -477,8 +510,67 @@ h4 {
   color: var(--accent-strong);
 }
 
+.mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mode-banner p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.mode-banner-warning {
+  background: rgba(253, 230, 138, 0.08);
+}
+
+.resolved-toggle {
+  position: absolute;
+  inset-inline: 10px;
+  top: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  text-align: left;
+}
+
 @media (max-width: 1400px) {
   .review-layout {
     grid-template-columns: 280px minmax(0, 1fr) 340px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    min-height: 320px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .review-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 260px minmax(320px, 1fr) 360px;
+  }
+
+  .file-pane,
+  .diff-pane {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .topbar,
+  .mode-banner {
+    padding-inline: 20px;
   }
 }

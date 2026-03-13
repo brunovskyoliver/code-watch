@@ -2,11 +2,12 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { AppDatabase } from "@main/db/client";
 import { projectsTable, reviewSessionsTable, sessionFilesTable } from "@main/db/schema";
 import { GitService } from "@main/services/git";
-import { parseUnifiedDiff } from "@main/services/diff-parser";
-import { createId, now } from "@main/services/utils";
+import { flattenDiffRows, parseUnifiedDiff } from "@main/services/diff-parser";
+import { createId, now, parseCursor } from "@main/services/utils";
 import type {
   ChangedFile,
-  FileDiff,
+  DiffRow,
+  PaginatedFileDiff,
   ProjectSummary,
   ReviewOpenResult,
   ReviewSessionDetail,
@@ -16,9 +17,20 @@ import type {
 type EventDispatcher = (channel: string, payload: unknown) => void;
 
 interface DiffCacheEntry {
-  value: FileDiff;
+  projectId: string;
+  filePath: string;
+  oldPath: string | null;
+  newPath: string | null;
+  isBinary: boolean;
+  stats: {
+    additions: number | null;
+    deletions: number | null;
+  };
+  rows: DiffRow[];
   at: number;
 }
+
+const DIFF_PAGE_SIZE = 400;
 
 export class ReviewService {
   private readonly diffCache = new Map<string, DiffCacheEntry>();
@@ -70,6 +82,8 @@ export class ReviewService {
 
     const sessionId = createId("session");
     const timestamp = now();
+
+    this.invalidateProjectDiffCache(projectId);
 
     this.db.insert(reviewSessionsTable).values({
       id: sessionId,
@@ -175,11 +189,11 @@ export class ReviewService {
     }));
   }
 
-  async diff(sessionId: string, filePath: string): Promise<FileDiff> {
+  async diff(sessionId: string, filePath: string, cursor?: string): Promise<PaginatedFileDiff> {
     const cacheKey = `${sessionId}:${filePath}`;
     const cached = this.diffCache.get(cacheKey);
     if (cached) {
-      return cached.value;
+      return this.sliceCachedDiff(cached, cursor);
     }
 
     const session = await this.db.query.reviewSessionsTable.findFirst({
@@ -199,7 +213,7 @@ export class ReviewService {
     }
 
     const diffText = await this.git.getFileDiff(project.repoPath, session.mergeBaseSha, session.headSha, filePath);
-    const value = parseUnifiedDiff(diffText, {
+    const diff = parseUnifiedDiff(diffText, {
       filePath,
       oldPath: file.oldPath,
       newPath: file.newPath,
@@ -208,7 +222,19 @@ export class ReviewService {
       deletions: file.deletions
     });
 
-    this.diffCache.set(cacheKey, { value, at: Date.now() });
+    const rows = flattenDiffRows(diff);
+    const entry: DiffCacheEntry = {
+      projectId: project.id,
+      filePath: diff.filePath,
+      oldPath: diff.oldPath,
+      newPath: diff.newPath,
+      isBinary: diff.isBinary,
+      stats: diff.stats,
+      rows,
+      at: Date.now()
+    };
+
+    this.diffCache.set(cacheKey, entry);
     if (this.diffCache.size > 150) {
       const oldestKey = this.diffCache.entries().next().value?.[0];
       if (oldestKey) {
@@ -216,7 +242,33 @@ export class ReviewService {
       }
     }
 
-    return value;
+    return this.sliceCachedDiff(entry, cursor);
+  }
+
+  private sliceCachedDiff(entry: DiffCacheEntry, cursor?: string): PaginatedFileDiff {
+    const offset = parseCursor(cursor);
+    const rows = entry.rows.slice(offset, offset + DIFF_PAGE_SIZE);
+    const nextOffset = offset + rows.length;
+
+    return {
+      filePath: entry.filePath,
+      oldPath: entry.oldPath,
+      newPath: entry.newPath,
+      isBinary: entry.isBinary,
+      stats: entry.stats,
+      rows,
+      hasMore: nextOffset < entry.rows.length,
+      nextCursor: nextOffset < entry.rows.length ? String(nextOffset) : null,
+      totalRowCount: entry.rows.length
+    };
+  }
+
+  private invalidateProjectDiffCache(projectId: string): void {
+    for (const [cacheKey, entry] of this.diffCache.entries()) {
+      if (entry.projectId === projectId) {
+        this.diffCache.delete(cacheKey);
+      }
+    }
   }
 
   private async requireProject(projectId: string) {
