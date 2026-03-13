@@ -1,0 +1,48 @@
+import { contextBridge, ipcRenderer } from "electron";
+import type { CodeWatchApi, RepoStateEvent, ReviewSessionEvent } from "@shared/types";
+
+function bindEvent<T>(channel: string, listener: (payload: T) => void): () => void {
+  const wrapped = (_event: Electron.IpcRendererEvent, payload: T) => listener(payload);
+  ipcRenderer.on(channel, wrapped);
+  return () => ipcRenderer.off(channel, wrapped);
+}
+
+const api: CodeWatchApi = {
+  projects: {
+    pickDirectory: () => ipcRenderer.invoke("projects:pickDirectory"),
+    add: (repoPath) => ipcRenderer.invoke("projects:add", repoPath),
+    list: () => ipcRenderer.invoke("projects:list"),
+    remove: (projectId) => ipcRenderer.invoke("projects:remove", projectId),
+    updateBaseBranch: (projectId, baseBranch) => ipcRenderer.invoke("projects:updateBaseBranch", projectId, baseBranch)
+  },
+  reviews: {
+    open: (projectId, baseBranch) => ipcRenderer.invoke("reviews:open", projectId, baseBranch),
+    list: (projectId) => ipcRenderer.invoke("reviews:list", projectId),
+    load: (sessionId) => ipcRenderer.invoke("reviews:load", sessionId),
+    files: (sessionId) => ipcRenderer.invoke("reviews:files", sessionId),
+    diff: (sessionId, filePath, cursor) => ipcRenderer.invoke("reviews:diff", sessionId, filePath, cursor)
+  },
+  threads: {
+    listForFile: (sessionId, filePath) => ipcRenderer.invoke("threads:listForFile", sessionId, filePath),
+    get: (threadId, cursor) => ipcRenderer.invoke("threads:get", threadId, cursor),
+    create: (anchor, body) => ipcRenderer.invoke("threads:create", anchor, body),
+    addComment: (threadId, body) => ipcRenderer.invoke("threads:addComment", threadId, body),
+    resolve: (threadId) => ipcRenderer.invoke("threads:resolve", threadId),
+    reopen: (threadId) => ipcRenderer.invoke("threads:reopen", threadId)
+  },
+  events: {
+    onRepoChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.changed", listener),
+    onBranchChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.branchChanged", listener),
+    onDirtyStateChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.dirtyStateChanged", listener),
+    onReviewSessionCreated: (listener: (payload: ReviewSessionEvent) => void) =>
+      bindEvent("review.sessionCreated", listener)
+  }
+};
+
+contextBridge.exposeInMainWorld("codeWatch", api);
+
+declare global {
+  interface Window {
+    codeWatch: CodeWatchApi;
+  }
+}
