@@ -1,5 +1,6 @@
 import {
   Fragment,
+  type MouseEvent as ReactMouseEvent,
   startTransition,
   useDeferredValue,
   useEffect,
@@ -20,6 +21,7 @@ type DiffRow =
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
+const PROJECT_MENU_OFFSET = 6;
 
 export default function App() {
   const {
@@ -62,6 +64,11 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(288);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
+  const [projectContextMenu, setProjectContextMenu] = useState<{
+    x: number;
+    y: number;
+    projectId: string;
+  } | null>(null);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
   const deferredFilePath = useDeferredValue(selectedFilePath);
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
@@ -118,6 +125,26 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    const closeProjectContextMenu = () => setProjectContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setProjectContextMenu(null);
+      }
+    };
+    window.addEventListener("pointerdown", closeProjectContextMenu);
+    window.addEventListener("resize", closeProjectContextMenu);
+    window.addEventListener("scroll", closeProjectContextMenu, true);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", closeProjectContextMenu);
+      window.removeEventListener("resize", closeProjectContextMenu);
+      window.removeEventListener("scroll", closeProjectContextMenu, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     setBaseBranchMenuOpen(false);
@@ -209,6 +236,24 @@ export default function App() {
     }
   };
 
+  const openProjectContextMenu = (event: ReactMouseEvent<HTMLButtonElement>, projectId: string) => {
+    event.preventDefault();
+    setProjectContextMenu({
+      x: event.clientX,
+      y: event.clientY + PROJECT_MENU_OFFSET,
+      projectId
+    });
+  };
+
+  const deleteProjectFromContextMenu = () => {
+    if (!projectContextMenu) {
+      return;
+    }
+
+    void removeProject(projectContextMenu.projectId);
+    setProjectContextMenu(null);
+  };
+
   return (
     <div className="app-shell" style={shellStyle}>
       <aside className="sidebar">
@@ -216,7 +261,9 @@ export default function App() {
           <div className="sidebar-title">
             <span className="app-mark" aria-hidden="true" />
             <div>
-              <h1>Code Watch</h1>
+              <h1 className="brand-title">
+                <span className="brand-code">Code</span> <span className="brand-watch">Watch</span>
+              </h1>
               <p>{projects.length} repo{projects.length === 1 ? "" : "s"}</p>
             </div>
           </div>
@@ -233,33 +280,38 @@ export default function App() {
               const isActive = project.id === activeProjectId;
 
               return (
-                <div key={project.id} className={`project-card ${isActive ? "project-card-active" : ""}`}>
-                  <button
-                    className="project-button"
-                    onClick={() => {
-                      startTransition(() => {
-                        void selectProject(project.id);
-                      });
-                    }}
-                  >
-                    <div className="project-copy">
-                      <FolderIcon />
-                      <strong>{project.name}</strong>
-                    </div>
-                  </button>
-
-                  {isActive ? (
-                    <div className="project-sessions">
-                      <button className="danger-button subtle-danger-button" onClick={() => void removeProject(project.id)}>
-                        Remove
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <button
+                  key={project.id}
+                  className={`project-button project-row ${isActive ? "project-row-active" : ""}`}
+                  onClick={() => {
+                    startTransition(() => {
+                      void selectProject(project.id);
+                    });
+                  }}
+                  onContextMenu={(event) => openProjectContextMenu(event, project.id)}
+                >
+                  <div className="project-copy">
+                    <FolderIcon />
+                    <strong>{project.name}</strong>
+                  </div>
+                </button>
               );
             })
           )}
         </div>
+
+        {projectContextMenu ? (
+          <div
+            className="context-menu"
+            style={{ left: `${projectContextMenu.x}px`, top: `${projectContextMenu.y}px` }}
+            role="menu"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button className="context-menu-item context-menu-item-danger" role="menuitem" onClick={deleteProjectFromContextMenu}>
+              Delete Project
+            </button>
+          </div>
+        ) : null}
       </aside>
 
       <div
@@ -285,7 +337,6 @@ export default function App() {
             <div className="topbar-meta">
               <span className="badge">{activeSession.project.currentBranch ?? "head"}</span>
               <div className="base-branch-control" ref={baseBranchMenuRef}>
-                <span>Base</span>
                 <button
                   type="button"
                   className="base-branch-trigger"
