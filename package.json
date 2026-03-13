@@ -1,0 +1,46 @@
+{
+  "name": "code-watch",
+  "productName": "Code Watch",
+  "version": "0.1.0",
+  "description": "Local Electron code review app for Git repositories.",
+  "main": ".vite/build/main.js",
+  "packageManager": "bun@1.3.10",
+  "scripts": {
+    "dev": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "test": "vitest run"
+  },
+  "trustedDependencies": [
+    "better-sqlite3",
+    "electron"
+  ],
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.12",
+    "better-sqlite3": "^12.4.1",
+    "chokidar": "^4.0.3",
+    "drizzle-orm": "^0.44.6",
+    "electron-log": "^5.4.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^4.1.11",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-dmg": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-vite": "^7.10.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.5.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^37.3.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.8",
+    "vitest": "^3.2.4"
+  }
+}
