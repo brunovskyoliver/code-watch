@@ -1,18 +1,31 @@
 import {
-  Fragment,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   startTransition,
   useDeferredValue,
   useEffect,
   useMemo,
   useRef,
-  useState,
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent
+  useState
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { FileList } from "@renderer/components/file-list";
+import { EmptyState, LoadingState } from "@renderer/components/shared";
+import { ThreadPanel } from "@renderer/components/thread-panel";
+import {
+  createDefaultReviewLayout,
+  getNormalizedPaneSizes,
+  getVisibleReviewPanes,
+  parseStoredReviewLayout,
+  reorderReviewPanes,
+  setReviewPaneVisibility,
+  type ReviewLayoutState,
+  type ReviewPaneId
+} from "@renderer/layout/review-layout";
 import { useAppStore } from "@renderer/store/app-store";
-import type { ChangedFile, DiffLine, FileDiff, PaginatedComments, ThreadAnchor, ThreadPreview } from "@shared/types";
+import type { DiffLine, FileDiff, ThreadAnchor, ThreadPreview } from "@shared/types";
 
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
@@ -26,16 +39,24 @@ interface FlattenedDiffRows {
 }
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
+const REVIEW_LAYOUT_KEY = "code-watch.review-layout.v1";
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 420;
 const PROJECT_MENU_OFFSET = 6;
 const MAX_RENDERED_DIFF_LINES = 1000;
+const MIN_PANE_WIDTH = 180;
+
+const paneLabels: Record<ReviewPaneId, string> = {
+  files: "Files",
+  diff: "Diff",
+  threads: "Notes"
+};
+
 
 export default function App() {
   const {
     projects,
     baseBranchesByProject,
-    sessionsByProject,
     activeProjectId,
     activeSession,
     files,
@@ -70,6 +91,9 @@ export default function App() {
   } = useAppStore();
 
   const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
+  const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
+  const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<{
@@ -78,6 +102,7 @@ export default function App() {
     projectId: string;
   } | null>(null);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
+  const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
   const deferredFilePath = useDeferredValue(selectedFilePath);
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
   const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
@@ -92,6 +117,8 @@ export default function App() {
     branchSet.add(activeProject.defaultBaseBranch);
     return [...branchSet].sort((a, b) => a.localeCompare(b));
   }, [activeProject, baseBranchesByProject]);
+  const visibleReviewPanes = useMemo(() => getVisibleReviewPanes(reviewLayout), [reviewLayout]);
+  const normalizedPaneSizes = useMemo(() => getNormalizedPaneSizes(reviewLayout), [reviewLayout]);
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
 
   useEffect(() => {
@@ -119,20 +146,24 @@ export default function App() {
   }, [initialize, refreshProject]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (!stored) {
-      return;
+    const storedSidebarWidth = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (storedSidebarWidth) {
+      const parsedWidth = Number.parseInt(storedSidebarWidth, 10);
+      if (!Number.isNaN(parsedWidth)) {
+        setSidebarWidth(clampSidebarWidth(parsedWidth));
+      }
     }
 
-    const parsed = Number.parseInt(stored, 10);
-    if (!Number.isNaN(parsed)) {
-      setSidebarWidth(clampSidebarWidth(parsed));
-    }
+    setReviewLayout(parseStoredReviewLayout(window.localStorage.getItem(REVIEW_LAYOUT_KEY)));
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem(REVIEW_LAYOUT_KEY, JSON.stringify(reviewLayout));
+  }, [reviewLayout]);
 
   useEffect(() => {
     const closeProjectContextMenu = () => setProjectContextMenu(null);
@@ -216,6 +247,48 @@ export default function App() {
     window.addEventListener("pointerup", handlePointerUp);
   };
 
+  const beginPaneResize = (event: ReactPointerEvent<HTMLDivElement>, leftPaneId: ReviewPaneId, rightPaneId: ReviewPaneId) => {
+    event.preventDefault();
+
+    const containerWidth = reviewLayoutRef.current?.getBoundingClientRect().width ?? 0;
+    if (containerWidth <= 0) {
+      return;
+    }
+
+    const startX = event.clientX;
+    const startSizes = getNormalizedPaneSizes(reviewLayout);
+    const pairWidth = ((startSizes[leftPaneId] + startSizes[rightPaneId]) / 100) * containerWidth;
+    const startLeftWidth = (startSizes[leftPaneId] / 100) * containerWidth;
+    document.body.classList.add("is-resizing");
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const rightMinimum = Math.min(getPaneMinimumWidth(rightPaneId), Math.max(MIN_PANE_WIDTH, pairWidth - MIN_PANE_WIDTH));
+      const leftMinimum = Math.min(getPaneMinimumWidth(leftPaneId), Math.max(MIN_PANE_WIDTH, pairWidth - MIN_PANE_WIDTH));
+      const lowerBound = Math.min(leftMinimum, pairWidth - rightMinimum);
+      const upperBound = Math.max(lowerBound, pairWidth - rightMinimum);
+      const nextLeftWidth = clamp(startLeftWidth + moveEvent.clientX - startX, lowerBound, upperBound);
+      const nextRightWidth = pairWidth - nextLeftWidth;
+
+      setReviewLayout((previous) => ({
+        ...previous,
+        sizes: {
+          ...previous.sizes,
+          [leftPaneId]: (nextLeftWidth / containerWidth) * 100,
+          [rightPaneId]: (nextRightWidth / containerWidth) * 100
+        }
+      }));
+    };
+
+    const handlePointerUp = () => {
+      document.body.classList.remove("is-resizing");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
   const toggleBaseBranchMenu = () => {
     if (!activeProject) {
       return;
@@ -260,6 +333,107 @@ export default function App() {
 
     void removeProject(projectContextMenu.projectId);
     setProjectContextMenu(null);
+  };
+
+  const togglePaneVisibility = (paneId: ReviewPaneId) => {
+    setReviewLayout((previous) => setReviewPaneVisibility(previous, paneId, !previous.visibility[paneId]));
+  };
+
+  const resetPaneLayout = () => {
+    setDraggedPaneId(null);
+    setDropTargetPaneId(null);
+    setReviewLayout(createDefaultReviewLayout());
+  };
+
+  const handlePaneDragStart = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", paneId);
+    setDraggedPaneId(paneId);
+    setDropTargetPaneId(null);
+  };
+
+  const handlePaneDragOver = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
+    if (!draggedPaneId || draggedPaneId === paneId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTargetPaneId(paneId);
+  };
+
+  const handlePaneDrop = (paneId: ReviewPaneId) => {
+    if (!draggedPaneId || draggedPaneId === paneId) {
+      setDraggedPaneId(null);
+      setDropTargetPaneId(null);
+      return;
+    }
+
+    setReviewLayout((previous) => reorderReviewPanes(previous, draggedPaneId, paneId));
+    setDraggedPaneId(null);
+    setDropTargetPaneId(null);
+  };
+
+  const renderReviewPane = (paneId: ReviewPaneId) => {
+    if (paneId === "files") {
+      return (
+        <section key={paneId} className="review-pane file-pane">
+          <div className="pane-header">
+            <h3>Files</h3>
+            <span>{files.length}</span>
+          </div>
+          {loadingReview ? (
+            <LoadingState label="Refreshing" />
+          ) : (
+            <FileList files={files} selectedFilePath={selectedFilePath} onSelect={selectFile} />
+          )}
+        </section>
+      );
+    }
+
+    if (paneId === "diff") {
+      return (
+        <section key={paneId} className="review-pane diff-pane">
+          <div className="pane-header">
+            <h3>{selectedFilePath ?? "Diff"}</h3>
+            {loadingDiff ? <span className="loading-pill">Loading</span> : null}
+          </div>
+          {activeDiff ? (
+            <DiffViewer
+              sessionId={activeSession!.session.id}
+              diff={activeDiff}
+              threadPreviews={activeThreadPreviews}
+              onCreateThread={(anchor) => beginThread(anchor)}
+              onSelectThread={(threadId) => void selectThread(threadId)}
+            />
+          ) : selectedFilePath ? (
+            <LoadingState label="Loading diff" />
+          ) : (
+            <EmptyState title="No files" body="No committed changes." />
+          )}
+        </section>
+      );
+    }
+
+    return (
+      <section key={paneId} className="review-pane thread-pane">
+        <ThreadPanel
+          filePath={selectedFilePath}
+          threadPreviews={activeThreadPreviews}
+          activeThread={activeThread}
+          activeThreadPreview={activeThreadPreview}
+          composerAnchor={composerAnchor}
+          loadingThread={loadingThread}
+          onSelectThread={(threadId) => selectThread(threadId)}
+          onLoadOlder={() => loadOlderComments()}
+          onCreateThread={(body) => createThread(body)}
+          onAddComment={(body) => addComment(body)}
+          onResolve={() => resolveThread()}
+          onReopen={() => reopenThread()}
+          onCancelComposer={dismissComposer}
+        />
+      </section>
+    );
   };
 
   return (
@@ -386,57 +560,90 @@ export default function App() {
         {initializing ? (
           <LoadingState label="Loading" />
         ) : activeSession ? (
-          <div className="review-layout">
-            <section className="file-pane">
-              <div className="pane-header">
-                <h3>Files</h3>
-                <span>{files.length}</span>
+          <>
+            <section className="review-toolbar" aria-label="Review layout controls">
+              <div className="view-controls">
+                <p className="view-controls-copy">Drag views to reorder. Toggle any panel on or off.</p>
+                <div className="view-chip-row">
+                  {reviewLayout.order.map((paneId) => {
+                    const isVisible = reviewLayout.visibility[paneId];
+                    const hideDisabled = isVisible && visibleReviewPanes.length <= 1;
+                    return (
+                      <div
+                        key={paneId}
+                        className={`view-chip ${isVisible ? "view-chip-visible" : "view-chip-hidden"} ${
+                          draggedPaneId === paneId ? "view-chip-dragging" : ""
+                        } ${dropTargetPaneId === paneId ? "view-chip-drop-target" : ""}`}
+                        draggable
+                        onDragStart={(event) => handlePaneDragStart(event, paneId)}
+                        onDragOver={(event) => handlePaneDragOver(event, paneId)}
+                        onDragEnter={() => {
+                          if (draggedPaneId && draggedPaneId !== paneId) {
+                            setDropTargetPaneId(paneId);
+                          }
+                        }}
+                        onDragLeave={() => {
+                          if (dropTargetPaneId === paneId) {
+                            setDropTargetPaneId(null);
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedPaneId(null);
+                          setDropTargetPaneId(null);
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          handlePaneDrop(paneId);
+                        }}
+                      >
+                        <div className="view-chip-main">
+                          <span className="view-chip-grip" aria-hidden="true">
+                            ::
+                          </span>
+                          <span>{paneLabels[paneId]}</span>
+                        </div>
+                        <div className="view-chip-actions">
+                          <span className="view-chip-size">{isVisible ? `${Math.round(normalizedPaneSizes[paneId])}%` : "Hidden"}</span>
+                          <button
+                            type="button"
+                            className="view-chip-toggle"
+                            disabled={hideDisabled}
+                            onClick={() => togglePaneVisibility(paneId)}
+                          >
+                            {isVisible ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              {loadingReview ? (
-                <LoadingState label="Refreshing" />
-              ) : (
-                <FileList files={files} selectedFilePath={selectedFilePath} onSelect={selectFile} />
-              )}
+              <button type="button" className="ghost-button" onClick={resetPaneLayout}>
+                Reset layout
+              </button>
             </section>
 
-            <section className="diff-pane">
-              <div className="pane-header">
-                <h3>{selectedFilePath ?? "Diff"}</h3>
-                {loadingDiff ? <span className="loading-pill">Loading</span> : null}
-              </div>
-              {activeDiff ? (
-                <DiffViewer
-                  sessionId={activeSession.session.id}
-                  diff={activeDiff}
-                  threadPreviews={activeThreadPreviews}
-                  onCreateThread={(anchor) => beginThread(anchor)}
-                  onSelectThread={(threadId) => void selectThread(threadId)}
-                />
-              ) : selectedFilePath ? (
-                <LoadingState label="Loading diff" />
-              ) : (
-                <EmptyState title="No files" body="No committed changes." />
-              )}
-            </section>
-
-            <section className="thread-pane">
-              <ThreadPanel
-                filePath={selectedFilePath}
-                threadPreviews={activeThreadPreviews}
-                activeThread={activeThread}
-                activeThreadPreview={activeThreadPreview}
-                composerAnchor={composerAnchor}
-                loadingThread={loadingThread}
-                onSelectThread={(threadId) => selectThread(threadId)}
-                onLoadOlder={() => loadOlderComments()}
-                onCreateThread={(body) => createThread(body)}
-                onAddComment={(body) => addComment(body)}
-                onResolve={() => resolveThread()}
-                onReopen={() => reopenThread()}
-                onCancelComposer={dismissComposer}
-              />
-            </section>
-          </div>
+            <div ref={reviewLayoutRef} className="review-layout">
+              {visibleReviewPanes.map((paneId, index) => (
+                <div
+                  key={paneId}
+                  className="review-pane-slot"
+                  style={{ flexBasis: `${normalizedPaneSizes[paneId]}%` } satisfies CSSProperties}
+                >
+                  {renderReviewPane(paneId)}
+                  {index < visibleReviewPanes.length - 1 ? (
+                    <div
+                      className="pane-resizer"
+                      role="separator"
+                      aria-label={`Resize ${paneLabels[paneId]} and ${paneLabels[visibleReviewPanes[index + 1]!]}`}
+                      aria-orientation="vertical"
+                      onPointerDown={(event) => beginPaneResize(event, paneId, visibleReviewPanes[index + 1]!)}
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </>
         ) : (
           <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="Add" onAction={() => void addProject()} />
         )}
@@ -448,62 +655,6 @@ export default function App() {
           <button onClick={clearError}>Dismiss</button>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function FileList({
-  files,
-  selectedFilePath,
-  onSelect
-}: {
-  files: ChangedFile[];
-  selectedFilePath: string | null;
-  onSelect: (filePath: string) => Promise<void>;
-}) {
-  const parentRef = useRef<HTMLDivElement | null>(null);
-  const rowVirtualizer = useVirtualizer({
-    count: files.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 58,
-    overscan: 10
-  });
-
-  return (
-    <div ref={parentRef} className="virtual-scroll">
-      <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const file = files[virtualRow.index];
-          if (!file) {
-            return null;
-          }
-
-          return (
-            <button
-              key={file.id}
-              className={`file-row ${selectedFilePath === file.filePath ? "file-row-active" : ""}`}
-              style={{ transform: `translateY(${virtualRow.start}px)` }}
-              onClick={() => {
-                startTransition(() => {
-                  void onSelect(file.filePath);
-                });
-              }}
-            >
-              <div className="file-row-main">
-                <strong>{file.filePath}</strong>
-                <p>
-                  {file.status}
-                  {file.isBinary ? " · binary" : ""}
-                </p>
-              </div>
-              <div className="file-row-meta">
-                {file.additions !== null ? <span className="diff-add">+{file.additions}</span> : null}
-                {file.deletions !== null ? <span className="diff-delete">-{file.deletions}</span> : null}
-              </div>
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -607,201 +758,6 @@ function DiffViewer({
   );
 }
 
-function ThreadPanel({
-  filePath,
-  threadPreviews,
-  activeThread,
-  activeThreadPreview,
-  composerAnchor,
-  loadingThread,
-  onSelectThread,
-  onLoadOlder,
-  onCreateThread,
-  onAddComment,
-  onResolve,
-  onReopen,
-  onCancelComposer
-}: {
-  filePath: string | null;
-  threadPreviews: ThreadPreview[];
-  activeThread: PaginatedComments | null;
-  activeThreadPreview: ThreadPreview | null;
-  composerAnchor: ThreadAnchor | null;
-  loadingThread: boolean;
-  onSelectThread: (threadId: string) => Promise<void> | void;
-  onLoadOlder: () => Promise<void> | void;
-  onCreateThread: (body: string) => Promise<void> | void;
-  onAddComment: (body: string) => Promise<void> | void;
-  onResolve: () => Promise<void> | void;
-  onReopen: () => Promise<void> | void;
-  onCancelComposer: () => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const virtualizer = useVirtualizer({
-    count: threadPreviews.length,
-    getScrollElement: () => listRef.current,
-    estimateSize: () => 92,
-    overscan: 8
-  });
-
-  useEffect(() => {
-    setDraft("");
-  }, [composerAnchor?.lineContentHash, activeThread?.threadId]);
-
-  const submit = async () => {
-    const value = draft.trim();
-    if (!value) {
-      return;
-    }
-
-    if (composerAnchor) {
-      await onCreateThread(value);
-    } else {
-      await onAddComment(value);
-    }
-    setDraft("");
-  };
-
-  return (
-    <Fragment>
-      <div className="pane-header">
-        <h3>Notes</h3>
-        <span>{threadPreviews.length}</span>
-      </div>
-
-      {!filePath ? (
-        <EmptyState title="Pick a file" body="Notes show up here." />
-      ) : (
-        <div className="thread-layout">
-          <div ref={listRef} className="virtual-scroll thread-list-scroll">
-            <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const thread = threadPreviews[virtualRow.index];
-                if (!thread) {
-                  return null;
-                }
-
-                const latestComment = thread.latestComments.at(-1);
-                const active = activeThreadPreview?.id === thread.id;
-
-                return (
-                  <button
-                    key={thread.id}
-                    className={`thread-preview ${active ? "thread-preview-active" : ""}`}
-                    style={{ transform: `translateY(${virtualRow.start}px)` }}
-                    onClick={() => void onSelectThread(thread.id)}
-                  >
-                    <div className="thread-preview-head">
-                      <span>{thread.anchor.newLine ?? thread.anchor.oldLine ?? "?"}</span>
-                      <span className={`status-pill status-pill-${thread.status}`}>{thread.status}</span>
-                    </div>
-                    <p>{latestComment?.body ?? "No comments"}</p>
-                    {thread.remainingCommentCount > 0 ? (
-                      <small>{thread.remainingCommentCount} older</small>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="thread-detail">
-            {composerAnchor ? (
-              <Fragment>
-                <div className="thread-detail-header">
-                  <h4>New note</h4>
-                  <button className="ghost-button" onClick={onCancelComposer}>
-                    Cancel
-                  </button>
-                </div>
-                <p className="thread-meta">Line {composerAnchor.newLine ?? composerAnchor.oldLine ?? "?"}</p>
-              </Fragment>
-            ) : activeThreadPreview ? (
-              <Fragment>
-                <div className="thread-detail-header">
-                  <div>
-                    <h4>Note</h4>
-                    <p className="thread-meta">Line {activeThreadPreview.anchor.newLine ?? activeThreadPreview.anchor.oldLine ?? "?"}</p>
-                  </div>
-                  <button
-                    className="ghost-button"
-                    onClick={() => void (activeThreadPreview.status === "open" ? onResolve() : onReopen())}
-                  >
-                    {activeThreadPreview.status === "open" ? "Resolve" : "Reopen"}
-                  </button>
-                </div>
-              </Fragment>
-            ) : (
-              <EmptyState title="No note" body="Click a diff line to start." />
-            )}
-
-            {loadingThread ? <LoadingState label="Loading" /> : null}
-
-            {activeThread ? (
-              <div className="thread-comments">
-                {activeThread.hasMore ? (
-                  <button className="ghost-button" onClick={() => void onLoadOlder()}>
-                    Older
-                  </button>
-                ) : null}
-                {activeThread.comments.map((comment) => (
-                  <article key={comment.id} className="comment-card">
-                    <time>{formatTimestamp(comment.createdAt)}</time>
-                    <p>{comment.body}</p>
-                  </article>
-                ))}
-              </div>
-            ) : null}
-
-            {(composerAnchor || activeThreadPreview) ? (
-              <div className="comment-composer">
-                <textarea
-                  placeholder={composerAnchor ? "Start a note…" : "Reply…"}
-                  value={draft}
-                  onChange={(event) => setDraft(event.currentTarget.value)}
-                  rows={5}
-                />
-                <button className="primary-button" onClick={() => void submit()}>
-                  {composerAnchor ? "Create" : "Reply"}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
-    </Fragment>
-  );
-}
-
-function EmptyState({
-  title,
-  body,
-  actionLabel,
-  onAction
-}: {
-  title: string;
-  body: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <div className="empty-state">
-      <h3>{title}</h3>
-      <p>{body}</p>
-      {actionLabel && onAction ? (
-        <button className="primary-button" onClick={onAction}>
-          {actionLabel}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function LoadingState({ label }: { label: string }) {
-  return <div className="loading-state">{label}…</div>;
-}
-
 function FolderIcon() {
   return (
     <svg
@@ -865,9 +821,8 @@ function getThreadKey(oldLine: number | null, newLine: number | null): string {
   return `${oldLine ?? "x"}:${newLine ?? "x"}`;
 }
 
-function toAnchor(filePath: string, line: DiffLine): ThreadAnchor {
+function toAnchor(filePath: string, line: DiffLine): Omit<ThreadAnchor, "sessionId"> {
   return {
-    sessionId: "",
     filePath,
     side: line.newLineNumber !== null ? "new" : "old",
     oldLine: line.oldLineNumber,
@@ -881,10 +836,22 @@ function shortSha(sha: string): string {
   return sha.slice(0, 7);
 }
 
-function formatTimestamp(value: number): string {
-  return new Date(value).toLocaleString();
+function clampSidebarWidth(value: number): number {
+  return clamp(value, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
 }
 
-function clampSidebarWidth(value: number): number {
-  return Math.min(Math.max(value, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
+function getPaneMinimumWidth(paneId: ReviewPaneId): number {
+  switch (paneId) {
+    case "files":
+      return 220;
+    case "threads":
+      return 260;
+    case "diff":
+    default:
+      return 320;
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
