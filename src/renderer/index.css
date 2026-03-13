@@ -75,7 +75,6 @@ textarea {
 .topbar,
 .pane-header,
 .project-button,
-.session-button,
 .thread-preview-head,
 .thread-detail-header {
   display: flex;
@@ -158,7 +157,6 @@ textarea {
 }
 
 .project-button,
-.session-button,
 .file-row,
 .diff-line,
 .thread-preview {
@@ -222,19 +220,6 @@ textarea {
   gap: 8px;
   padding: 0 10px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.session-button {
-  padding: 9px 11px;
-  border-radius: 12px;
-  color: var(--muted-strong);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.session-button-active {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .sidebar-resizer {
@@ -325,7 +310,6 @@ body.is-resizing .sidebar-resizer::before {
 .file-row:hover,
 .thread-preview:hover,
 .ghost-button:hover,
-.session-button:hover,
 .project-button:hover {
   background: rgba(255, 255, 255, 0.05);
 }
