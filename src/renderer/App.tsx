@@ -259,7 +259,6 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-title">
-            <span className="app-mark" aria-hidden="true" />
             <div>
               <h1 className="brand-title">
                 <span className="brand-code">Code</span> <span className="brand-watch">Watch</span>
