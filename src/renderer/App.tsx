@@ -1,4 +1,14 @@
-import { Fragment, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore } from "@renderer/store/app-store";
 import type { ChangedFile, DiffLine, FileDiff, PaginatedComments, ThreadAnchor, ThreadPreview } from "@shared/types";
@@ -6,6 +16,10 @@ import type { ChangedFile, DiffLine, FileDiff, PaginatedComments, ThreadAnchor, 
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
   | { type: "line"; id: string; line: DiffLine };
+
+const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 420;
 
 export default function App() {
   const {
@@ -44,6 +58,13 @@ export default function App() {
     clearError
   } = useAppStore();
 
+  const [sidebarWidth, setSidebarWidth] = useState(288);
+  const deferredFilePath = useDeferredValue(selectedFilePath);
+  const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
+  const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
+
   useEffect(() => {
     void initialize();
 
@@ -68,36 +89,74 @@ export default function App() {
     };
   }, [initialize, refreshProject]);
 
-  const deferredFilePath = useDeferredValue(selectedFilePath);
-  const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
-  const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
-  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  useEffect(() => {
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!stored) {
+      return;
+    }
+
+    const parsed = Number.parseInt(stored, 10);
+    if (!Number.isNaN(parsed)) {
+      setSidebarWidth(clampSidebarWidth(parsed));
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
+  }, [sidebarWidth]);
+
+  useEffect(
+    () => () => {
+      document.body.classList.remove("is-resizing");
+    },
+    []
+  );
+
+  const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    document.body.classList.add("is-resizing");
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+    };
+
+    const handlePointerUp = () => {
+      document.body.classList.remove("is-resizing");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={shellStyle}>
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div>
-            <p className="eyebrow">Code Watch</p>
-            <h1>Projects</h1>
+          <div className="sidebar-title">
+            <span className="app-mark" aria-hidden="true" />
+            <div>
+              <h1>Code Watch</h1>
+              <p>{projects.length} repo{projects.length === 1 ? "" : "s"}</p>
+            </div>
           </div>
-          <button className="ghost-button" onClick={() => void addProject()}>
-            Add Repo
+          <button className="ghost-button" onClick={() => void addProject()} aria-label="Add repository">
+            Add
           </button>
         </div>
 
         <div className="sidebar-scroll">
           {projects.length === 0 ? (
-            <EmptyState
-              title="No repositories yet"
-              body="Add a local Git project to start reviewing your current branch."
-              actionLabel="Add repository"
-              onAction={() => void addProject()}
-            />
+            <EmptyState title="No repos" body="Add a local Git repo." actionLabel="Add" onAction={() => void addProject()} />
           ) : (
             projects.map((project) => {
               const sessions = sessionsByProject[project.id] ?? [];
               const isActive = project.id === activeProjectId;
+
               return (
                 <div key={project.id} className={`project-card ${isActive ? "project-card-active" : ""}`}>
                   <button
@@ -108,13 +167,13 @@ export default function App() {
                       });
                     }}
                   >
-                    <div>
+                    <div className="project-copy">
                       <strong>{project.name}</strong>
                       <p>{project.repoPath}</p>
                     </div>
                     <div className="project-meta">
-                      <span className="badge">{project.currentBranch ?? "detached"}</span>
-                      {project.dirty ? <span className="badge badge-warning">Dirty</span> : null}
+                      <span className="badge">{project.currentBranch ?? "head"}</span>
+                      {project.dirty ? <span className="badge badge-warning">dirty</span> : null}
                     </div>
                   </button>
 
@@ -136,7 +195,7 @@ export default function App() {
                           <small>{shortSha(session.headSha)}</small>
                         </button>
                       ))}
-                      <button className="danger-button" onClick={() => void removeProject(project.id)}>
+                      <button className="danger-button subtle-danger-button" onClick={() => void removeProject(project.id)}>
                         Remove
                       </button>
                     </div>
@@ -148,18 +207,32 @@ export default function App() {
         </div>
       </aside>
 
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        onPointerDown={beginSidebarResize}
+      />
+
       <main className="main-pane">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Review session</p>
-            <h2>{activeSession ? activeSession.project.name : "Select a project"}</h2>
+          <div className="topbar-title">
+            <h2>{activeSession ? activeSession.project.name : "Code Watch"}</h2>
+            <p>
+              {activeSession
+                ? `${activeSession.session.branchName} · ${shortSha(activeSession.session.headSha)}`
+                : "Local review"}
+            </p>
           </div>
+
           {activeSession && activeProject ? (
             <div className="topbar-meta">
-              <span className="badge">Current: {activeSession.project.currentBranch ?? "detached"}</span>
+              <span className="badge">{activeSession.project.currentBranch ?? "head"}</span>
               <label className="base-branch-control">
-                <span>Base branch</span>
+                <span>Base</span>
                 <input
+                  aria-label="Base branch"
                   defaultValue={activeProject.defaultBaseBranch}
                   onBlur={(event) => {
                     const value = event.currentTarget.value.trim();
@@ -169,22 +242,22 @@ export default function App() {
                   }}
                 />
               </label>
-              {activeSession.dirty ? <span className="badge badge-warning">Working tree dirty</span> : null}
+              {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
             </div>
           ) : null}
         </header>
 
         {initializing ? (
-          <LoadingState label="Loading projects" />
+          <LoadingState label="Loading" />
         ) : activeSession ? (
           <div className="review-layout">
             <section className="file-pane">
               <div className="pane-header">
-                <h3>Changed Files</h3>
+                <h3>Files</h3>
                 <span>{files.length}</span>
               </div>
               {loadingReview ? (
-                <LoadingState label="Refreshing review" />
+                <LoadingState label="Refreshing" />
               ) : (
                 <FileList files={files} selectedFilePath={selectedFilePath} onSelect={selectFile} />
               )}
@@ -193,7 +266,7 @@ export default function App() {
             <section className="diff-pane">
               <div className="pane-header">
                 <h3>{selectedFilePath ?? "Diff"}</h3>
-                {loadingDiff ? <span className="loading-pill">Loading diff…</span> : null}
+                {loadingDiff ? <span className="loading-pill">Loading</span> : null}
               </div>
               {activeDiff ? (
                 <DiffViewer
@@ -204,9 +277,9 @@ export default function App() {
                   onSelectThread={(threadId) => void selectThread(threadId)}
                 />
               ) : selectedFilePath ? (
-                <LoadingState label="Loading file diff" />
+                <LoadingState label="Loading diff" />
               ) : (
-                <EmptyState title="No changed files" body="This review session does not have committed changes to display." />
+                <EmptyState title="No files" body="No committed changes." />
               )}
             </section>
 
@@ -229,12 +302,7 @@ export default function App() {
             </section>
           </div>
         ) : (
-          <EmptyState
-            title="Add a repository"
-            body="Start by adding a local Git repository. Code Watch will open the current branch against its saved base branch."
-            actionLabel="Add repository"
-            onAction={() => void addProject()}
-          />
+          <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="Add" onAction={() => void addProject()} />
         )}
       </main>
 
@@ -330,8 +398,8 @@ function DiffViewer({
   if (diff.isBinary) {
     return (
       <div className="binary-file-card">
-        <h4>Binary file</h4>
-        <p>Inline preview is disabled for binary changes in v1.</p>
+        <h4>Binary</h4>
+        <p>Preview is off in v1.</p>
       </div>
     );
   }
@@ -362,6 +430,7 @@ function DiffViewer({
           const firstThread = threads[0];
           const anchor = toAnchor(diff.filePath, row.line);
           const canThread = row.line.oldLineNumber !== null || row.line.newLineNumber !== null;
+
           return (
             <button
               key={row.id}
@@ -384,7 +453,7 @@ function DiffViewer({
                     onSelectThread(firstThread.id);
                   }}
                 >
-                  {threads.length} thread{threads.length > 1 ? "s" : ""}
+                  {threads.length}
                 </span>
               ) : null}
             </button>
@@ -454,12 +523,12 @@ function ThreadPanel({
   return (
     <Fragment>
       <div className="pane-header">
-        <h3>Threads</h3>
+        <h3>Notes</h3>
         <span>{threadPreviews.length}</span>
       </div>
 
       {!filePath ? (
-        <EmptyState title="Select a file" body="Thread previews appear once a changed file is selected." />
+        <EmptyState title="Pick a file" body="Notes show up here." />
       ) : (
         <div className="thread-layout">
           <div ref={listRef} className="virtual-scroll thread-list-scroll">
@@ -472,6 +541,7 @@ function ThreadPanel({
 
                 const latestComment = thread.latestComments.at(-1);
                 const active = activeThreadPreview?.id === thread.id;
+
                 return (
                   <button
                     key={thread.id}
@@ -480,12 +550,12 @@ function ThreadPanel({
                     onClick={() => void onSelectThread(thread.id)}
                   >
                     <div className="thread-preview-head">
-                      <span>Line {thread.anchor.newLine ?? thread.anchor.oldLine ?? "?"}</span>
+                      <span>{thread.anchor.newLine ?? thread.anchor.oldLine ?? "?"}</span>
                       <span className={`status-pill status-pill-${thread.status}`}>{thread.status}</span>
                     </div>
                     <p>{latestComment?.body ?? "No comments"}</p>
                     {thread.remainingCommentCount > 0 ? (
-                      <small>{thread.remainingCommentCount} older comment{thread.remainingCommentCount > 1 ? "s" : ""}</small>
+                      <small>{thread.remainingCommentCount} older</small>
                     ) : null}
                   </button>
                 );
@@ -497,23 +567,19 @@ function ThreadPanel({
             {composerAnchor ? (
               <Fragment>
                 <div className="thread-detail-header">
-                  <h4>New thread</h4>
+                  <h4>New note</h4>
                   <button className="ghost-button" onClick={onCancelComposer}>
                     Cancel
                   </button>
                 </div>
-                <p className="thread-meta">
-                  Anchored at line {composerAnchor.newLine ?? composerAnchor.oldLine ?? "?"}
-                </p>
+                <p className="thread-meta">Line {composerAnchor.newLine ?? composerAnchor.oldLine ?? "?"}</p>
               </Fragment>
             ) : activeThreadPreview ? (
               <Fragment>
                 <div className="thread-detail-header">
                   <div>
-                    <h4>Thread</h4>
-                    <p className="thread-meta">
-                      Line {activeThreadPreview.anchor.newLine ?? activeThreadPreview.anchor.oldLine ?? "?"}
-                    </p>
+                    <h4>Note</h4>
+                    <p className="thread-meta">Line {activeThreadPreview.anchor.newLine ?? activeThreadPreview.anchor.oldLine ?? "?"}</p>
                   </div>
                   <button
                     className="ghost-button"
@@ -524,16 +590,16 @@ function ThreadPanel({
                 </div>
               </Fragment>
             ) : (
-              <EmptyState title="Select or create a thread" body="Click a diff line to start a thread, or select one from the list." />
+              <EmptyState title="No note" body="Click a diff line to start." />
             )}
 
-            {loadingThread ? <LoadingState label="Loading thread" /> : null}
+            {loadingThread ? <LoadingState label="Loading" /> : null}
 
             {activeThread ? (
               <div className="thread-comments">
                 {activeThread.hasMore ? (
                   <button className="ghost-button" onClick={() => void onLoadOlder()}>
-                    Load older comments
+                    Older
                   </button>
                 ) : null}
                 {activeThread.comments.map((comment) => (
@@ -548,13 +614,13 @@ function ThreadPanel({
             {(composerAnchor || activeThreadPreview) ? (
               <div className="comment-composer">
                 <textarea
-                  placeholder={composerAnchor ? "Start the thread…" : "Reply to this thread…"}
+                  placeholder={composerAnchor ? "Start a note…" : "Reply…"}
                   value={draft}
                   onChange={(event) => setDraft(event.currentTarget.value)}
                   rows={5}
                 />
                 <button className="primary-button" onClick={() => void submit()}>
-                  {composerAnchor ? "Create thread" : "Add comment"}
+                  {composerAnchor ? "Create" : "Reply"}
                 </button>
               </div>
             ) : null}
@@ -637,4 +703,8 @@ function shortSha(sha: string): string {
 
 function formatTimestamp(value: number): string {
   return new Date(value).toLocaleString();
+}
+
+function clampSidebarWidth(value: number): number {
+  return Math.min(Math.max(value, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
 }
