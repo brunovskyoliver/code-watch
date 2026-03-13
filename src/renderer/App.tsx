@@ -24,7 +24,6 @@ const MAX_SIDEBAR_WIDTH = 420;
 export default function App() {
   const {
     projects,
-    sessionsByProject,
     activeProjectId,
     activeSession,
     files,
@@ -44,7 +43,6 @@ export default function App() {
     removeProject,
     selectProject,
     refreshProject,
-    selectSession,
     selectFile,
     updateBaseBranch,
     beginThread,
@@ -154,7 +152,6 @@ export default function App() {
             <EmptyState title="No repos" body="Add a local Git repo." actionLabel="Add" onAction={() => void addProject()} />
           ) : (
             projects.map((project) => {
-              const sessions = sessionsByProject[project.id] ?? [];
               const isActive = project.id === activeProjectId;
 
               return (
@@ -175,22 +172,6 @@ export default function App() {
 
                   {isActive ? (
                     <div className="project-sessions">
-                      {sessions.map((session) => (
-                        <button
-                          key={session.id}
-                          className={`session-button ${
-                            activeSession?.session.id === session.id ? "session-button-active" : ""
-                          }`}
-                          onClick={() => {
-                            startTransition(() => {
-                              void selectSession(project.id, session.id);
-                            });
-                          }}
-                        >
-                          <span>{session.branchName}</span>
-                          <small>{shortSha(session.headSha)}</small>
-                        </button>
-                      ))}
                       <button className="danger-button subtle-danger-button" onClick={() => void removeProject(project.id)}>
                         Remove
                       </button>
