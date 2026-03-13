@@ -45,7 +45,6 @@ export default function App() {
     removeProject,
     selectProject,
     refreshProject,
-    selectSession,
     selectFile,
     listBranches,
     updateBaseBranch,
@@ -231,7 +230,6 @@ export default function App() {
             <EmptyState title="No repos" body="Add a local Git repo." actionLabel="Add" onAction={() => void addProject()} />
           ) : (
             projects.map((project) => {
-              const sessions = sessionsByProject[project.id] ?? [];
               const isActive = project.id === activeProjectId;
 
               return (
@@ -245,33 +243,13 @@ export default function App() {
                     }}
                   >
                     <div className="project-copy">
+                      <FolderIcon />
                       <strong>{project.name}</strong>
-                      <p>{project.repoPath}</p>
-                    </div>
-                    <div className="project-meta">
-                      <span className="badge">{project.currentBranch ?? "head"}</span>
-                      {project.dirty ? <span className="badge badge-warning">dirty</span> : null}
                     </div>
                   </button>
 
                   {isActive ? (
                     <div className="project-sessions">
-                      {sessions.map((session) => (
-                        <button
-                          key={session.id}
-                          className={`session-button ${
-                            activeSession?.session.id === session.id ? "session-button-active" : ""
-                          }`}
-                          onClick={() => {
-                            startTransition(() => {
-                              void selectSession(project.id, session.id);
-                            });
-                          }}
-                        >
-                          <span>{session.branchName}</span>
-                          <small>{shortSha(session.headSha)}</small>
-                        </button>
-                      ))}
                       <button className="danger-button subtle-danger-button" onClick={() => void removeProject(project.id)}>
                         Remove
                       </button>
@@ -758,6 +736,25 @@ function EmptyState({
 
 function LoadingState({ label }: { label: string }) {
   return <div className="loading-state">{label}…</div>;
+}
+
+function FolderIcon() {
+  return (
+    <svg
+      className="project-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.25 12.75V7.5A2.25 2.25 0 0 1 4.5 5.25h5.379a2.25 2.25 0 0 1 1.591.659l1.371 1.371a2.25 2.25 0 0 0 1.591.659h5.068A2.25 2.25 0 0 1 21.75 10.5v2.25m-19.5 0v4.5A2.25 2.25 0 0 0 4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25v-4.5m-19.5 0h19.5"
+      />
+    </svg>
+  );
 }
 
 function flattenDiffRows(diff: FileDiff): DiffRow[] {
