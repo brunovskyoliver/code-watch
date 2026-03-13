@@ -334,7 +334,6 @@ export default function App() {
 
           {activeSession && activeProject ? (
             <div className="topbar-meta">
-              <span className="badge">{activeSession.project.currentBranch ?? "head"}</span>
               <div className="base-branch-control" ref={baseBranchMenuRef}>
                 <button
                   type="button"
