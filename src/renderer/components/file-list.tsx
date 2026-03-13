@@ -15,7 +15,7 @@ export function FileList({
   const rowVirtualizer = useVirtualizer({
     count: files.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 58,
+    estimateSize: () => 72,
     overscan: 10
   });
 

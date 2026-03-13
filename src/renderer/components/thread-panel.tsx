@@ -102,11 +102,6 @@ export function ThreadPanel({
 
   return (
     <Fragment>
-      <div className="pane-header">
-        <h3>Notes</h3>
-        <span>{threadPreviews.length}</span>
-      </div>
-
       {!filePath ? (
         <EmptyState title="Select a file" body="Thread previews appear once a changed file is selected." />
       ) : (
