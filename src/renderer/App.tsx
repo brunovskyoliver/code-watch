@@ -692,7 +692,7 @@ function DiffViewer({
   }
 
   return (
-    <Fragment>
+    <>
       {isTruncated ? (
         <div className="diff-truncate-notice">
           Showing first {renderedLineCount} of {totalLineCount} lines for performance.
@@ -754,7 +754,7 @@ function DiffViewer({
           })}
         </div>
       </div>
-    </Fragment>
+    </>
   );
 }
 
