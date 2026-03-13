@@ -84,7 +84,7 @@ textarea {
 }
 
 .sidebar-header {
-  padding: 18px 18px 14px 84px;
+  padding: 12px 18px 14px 84px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -114,14 +114,6 @@ textarea {
 .thread-meta,
 .comment-card time {
   font-size: 12px;
-}
-
-.app-mark {
-  width: 11px;
-  height: 11px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .sidebar-scroll,
