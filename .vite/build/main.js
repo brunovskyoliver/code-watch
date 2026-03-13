@@ -11275,6 +11275,11 @@ class GitService {
       return null;
     }
   }
+  async listBranches(repoPath) {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const output = await this.runGit(rootPath, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"]);
+    return [...new Set(output.split("\n").map((line) => line.trim()).filter((line) => Boolean(line) && !line.endsWith("/HEAD")))].sort((a, b) => a.localeCompare(b));
+  }
   async getCommitSha(repoPath, ref) {
     return (await this.runGit(repoPath, ["rev-parse", ref])).trim();
   }
@@ -11485,6 +11490,10 @@ class ProjectService {
   }
   async remove(projectId) {
     this.db.delete(projectsTable).where(eq(projectsTable.id, projectId)).run();
+  }
+  async listBranches(projectId) {
+    const project = await this.getById(projectId);
+    return this.git.listBranches(project.repoPath);
   }
   async updateBaseBranch(projectId, baseBranch) {
     const project = await this.getById(projectId);
@@ -12056,7 +12065,7 @@ async function createMainWindow() {
     return { action: "deny" };
   });
   {
-    await mainWindow.loadURL("http://localhost:5173");
+    await mainWindow.loadURL("http://localhost:5174");
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 }

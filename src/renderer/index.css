@@ -84,7 +84,7 @@ textarea {
 }
 
 .sidebar-header {
-  padding: 18px 18px 14px;
+  padding: 18px 18px 14px 84px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -146,6 +146,19 @@ textarea {
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
+.project-row {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 10px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.project-row:hover,
+.project-row-active {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 .project-card:hover,
 .project-card-active {
   background: rgba(255, 255, 255, 0.045);
@@ -172,6 +185,10 @@ textarea {
   padding: 13px 14px;
 }
 
+.project-button.project-row {
+  padding: 9px 10px;
+}
+
 .project-copy {
   display: flex;
   align-items: center;
@@ -183,6 +200,12 @@ textarea {
 .file-row-main strong,
 .pane-header h3 {
   font-weight: 560;
+}
+
+.project-row .project-copy strong {
+  font-size: 12px;
+  font-weight: 520;
+  letter-spacing: 0.01em;
 }
 
 .file-row-main strong,
@@ -220,6 +243,36 @@ textarea {
   gap: 8px;
   padding: 0 10px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 172px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(17, 19, 23, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(14px);
+}
+
+.context-menu-item {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+}
+
+.context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.context-menu-item-danger {
+  color: #ffdfe3;
 }
 
 .sidebar-resizer {
@@ -528,11 +581,6 @@ body.is-resizing .sidebar-resizer::before {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.base-branch-control span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .base-branch-trigger {
   min-width: 88px;
   border: 0;
@@ -643,6 +691,20 @@ h4 {
 
 h1 {
   font-size: 15px;
+}
+
+.brand-title {
+  font-size: 14px;
+  font-weight: 560;
+  letter-spacing: 0;
+}
+
+.brand-code {
+  color: #fff;
+}
+
+.brand-watch {
+  color: rgba(255, 255, 255, 0.56);
 }
 
 h2 {
