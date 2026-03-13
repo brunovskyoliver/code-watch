@@ -1,0 +1,31 @@
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  build: {
+    emptyOutDir: false,
+    sourcemap: true,
+    lib: {
+      entry: "src/main/main.ts",
+      formats: ["cjs"],
+      fileName: () => "main.js"
+    },
+    rollupOptions: {
+      external: [
+        "better-sqlite3",
+        "chokidar",
+        "electron",
+        "electron-log",
+        "node:child_process",
+        "node:crypto",
+        "node:events",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:util"
+      ],
+      output: {
+        entryFileNames: "main.js"
+      }
+    }
+  }
+});
