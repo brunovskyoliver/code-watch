@@ -507,6 +507,14 @@ body.is-resizing .pane-resizer::before {
   font-family: "SF Mono", "SFMono-Regular", "Menlo", monospace;
 }
 
+.diff-truncate-notice {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 12px;
+  background: rgba(255, 199, 128, 0.08);
+}
+
 .diff-hunk-row,
 .diff-line {
   position: absolute;
