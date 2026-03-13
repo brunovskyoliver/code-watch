@@ -1,6 +1,5 @@
 import {
   type CSSProperties,
-  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   startTransition,
@@ -17,9 +16,7 @@ import { ThreadPanel } from "@renderer/components/thread-panel";
 import {
   createDefaultReviewLayout,
   getNormalizedPaneSizes,
-  getVisibleReviewPanes,
   parseStoredReviewLayout,
-  reorderReviewPanes,
   setReviewPaneVisibility,
   type ReviewLayoutState,
   type ReviewPaneId
@@ -40,8 +37,8 @@ interface FlattenedDiffRows {
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
 const REVIEW_LAYOUT_KEY = "code-watch.review-layout.v1";
-const MIN_SIDEBAR_WIDTH = 220;
-const MAX_SIDEBAR_WIDTH = 420;
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
 const MAX_RENDERED_DIFF_LINES = 1000;
 const MIN_PANE_WIDTH = 180;
@@ -90,10 +87,8 @@ export default function App() {
     clearError
   } = useAppStore();
 
-  const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [sidebarWidth, setSidebarWidth] = useState(248);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
-  const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
-  const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<{
@@ -117,7 +112,11 @@ export default function App() {
     branchSet.add(activeProject.defaultBaseBranch);
     return [...branchSet].sort((a, b) => a.localeCompare(b));
   }, [activeProject, baseBranchesByProject]);
-  const visibleReviewPanes = useMemo(() => getVisibleReviewPanes(reviewLayout), [reviewLayout]);
+  const effectivePaneOrder = reviewLayout.order;
+  const visibleReviewPanes = useMemo(
+    () => effectivePaneOrder.filter((paneId) => reviewLayout.visibility[paneId]),
+    [effectivePaneOrder, reviewLayout.visibility]
+  );
   const normalizedPaneSizes = useMemo(() => getNormalizedPaneSizes(reviewLayout), [reviewLayout]);
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
 
@@ -339,48 +338,15 @@ export default function App() {
     setReviewLayout((previous) => setReviewPaneVisibility(previous, paneId, !previous.visibility[paneId]));
   };
 
-  const resetPaneLayout = () => {
-    setDraggedPaneId(null);
-    setDropTargetPaneId(null);
-    setReviewLayout(createDefaultReviewLayout());
-  };
-
-  const handlePaneDragStart = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", paneId);
-    setDraggedPaneId(paneId);
-    setDropTargetPaneId(null);
-  };
-
-  const handlePaneDragOver = (event: ReactDragEvent<HTMLDivElement>, paneId: ReviewPaneId) => {
-    if (!draggedPaneId || draggedPaneId === paneId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropTargetPaneId(paneId);
-  };
-
-  const handlePaneDrop = (paneId: ReviewPaneId) => {
-    if (!draggedPaneId || draggedPaneId === paneId) {
-      setDraggedPaneId(null);
-      setDropTargetPaneId(null);
-      return;
-    }
-
-    setReviewLayout((previous) => reorderReviewPanes(previous, draggedPaneId, paneId));
-    setDraggedPaneId(null);
-    setDropTargetPaneId(null);
-  };
-
   const renderReviewPane = (paneId: ReviewPaneId) => {
     if (paneId === "files") {
       return (
         <section key={paneId} className="review-pane file-pane">
           <div className="pane-header">
             <h3>Files</h3>
-            <span>{files.length}</span>
+            <div className="pane-header-actions">
+              <span>{files.length}</span>
+            </div>
           </div>
           {loadingReview ? (
             <LoadingState label="Refreshing" />
@@ -396,7 +362,9 @@ export default function App() {
         <section key={paneId} className="review-pane diff-pane">
           <div className="pane-header">
             <h3>{selectedFilePath ?? "Diff"}</h3>
-            {loadingDiff ? <span className="loading-pill">Loading</span> : null}
+            <div className="pane-header-actions">
+              {loadingDiff ? <span className="loading-pill">Loading</span> : null}
+            </div>
           </div>
           {activeDiff ? (
             <DiffViewer
@@ -417,6 +385,12 @@ export default function App() {
 
     return (
       <section key={paneId} className="review-pane thread-pane">
+        <div className="pane-header">
+          <h3>Notes</h3>
+          <div className="pane-header-actions">
+            <span>{activeThreadPreviews.length}</span>
+          </div>
+        </div>
         <ThreadPanel
           filePath={selectedFilePath}
           threadPreviews={activeThreadPreviews}
@@ -449,13 +423,13 @@ export default function App() {
             </div>
           </div>
           <button className="ghost-button" onClick={() => void addProject()} aria-label="Add repository">
-            Add
+            +
           </button>
         </div>
 
         <div className="sidebar-scroll">
           {projects.length === 0 ? (
-            <EmptyState title="No repos" body="Add a local Git repo." actionLabel="Add" onAction={() => void addProject()} />
+            <EmptyState title="No repos" body="Add a local Git repo." actionLabel="+" onAction={() => void addProject()} />
           ) : (
             projects.map((project) => {
               const isActive = project.id === activeProjectId;
@@ -562,65 +536,35 @@ export default function App() {
         ) : activeSession ? (
           <>
             <section className="review-toolbar" aria-label="Review layout controls">
-              <div className="view-controls">
-                <p className="view-controls-copy">Drag views to reorder. Toggle any panel on or off.</p>
-                <div className="view-chip-row">
-                  {reviewLayout.order.map((paneId) => {
-                    const isVisible = reviewLayout.visibility[paneId];
-                    const hideDisabled = isVisible && visibleReviewPanes.length <= 1;
-                    return (
-                      <div
-                        key={paneId}
-                        className={`view-chip ${isVisible ? "view-chip-visible" : "view-chip-hidden"} ${
-                          draggedPaneId === paneId ? "view-chip-dragging" : ""
-                        } ${dropTargetPaneId === paneId ? "view-chip-drop-target" : ""}`}
-                        draggable
-                        onDragStart={(event) => handlePaneDragStart(event, paneId)}
-                        onDragOver={(event) => handlePaneDragOver(event, paneId)}
-                        onDragEnter={() => {
-                          if (draggedPaneId && draggedPaneId !== paneId) {
-                            setDropTargetPaneId(paneId);
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dropTargetPaneId === paneId) {
-                            setDropTargetPaneId(null);
-                          }
-                        }}
-                        onDragEnd={() => {
-                          setDraggedPaneId(null);
-                          setDropTargetPaneId(null);
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          handlePaneDrop(paneId);
-                        }}
-                      >
-                        <div className="view-chip-main">
-                          <span className="view-chip-grip" aria-hidden="true">
-                            ::
-                          </span>
-                          <span>{paneLabels[paneId]}</span>
-                        </div>
-                        <div className="view-chip-actions">
-                          <span className="view-chip-size">{isVisible ? `${Math.round(normalizedPaneSizes[paneId])}%` : "Hidden"}</span>
-                          <button
-                            type="button"
-                            className="view-chip-toggle"
-                            disabled={hideDisabled}
-                            onClick={() => togglePaneVisibility(paneId)}
-                          >
-                            {isVisible ? "Hide" : "Show"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="pane-toolbar" role="toolbar" aria-label="Toggle review panes">
+                <button
+                  type="button"
+                  className={`pane-toolbar-button ${reviewLayout.visibility.files ? "pane-toolbar-button-active" : ""}`}
+                  aria-pressed={reviewLayout.visibility.files}
+                  aria-label="Toggle files pane"
+                  onClick={() => togglePaneVisibility("files")}
+                >
+                  <FilesPaneIcon />
+                </button>
+                <button
+                  type="button"
+                  className={`pane-toolbar-button ${reviewLayout.visibility.diff ? "pane-toolbar-button-active" : ""}`}
+                  aria-pressed={reviewLayout.visibility.diff}
+                  aria-label="Toggle diff pane"
+                  onClick={() => togglePaneVisibility("diff")}
+                >
+                  <DiffPaneIcon />
+                </button>
+                <button
+                  type="button"
+                  className={`pane-toolbar-button ${reviewLayout.visibility.threads ? "pane-toolbar-button-active" : ""}`}
+                  aria-pressed={reviewLayout.visibility.threads}
+                  aria-label="Toggle notes pane"
+                  onClick={() => togglePaneVisibility("threads")}
+                >
+                  <NotesPaneIcon />
+                </button>
               </div>
-              <button type="button" className="ghost-button" onClick={resetPaneLayout}>
-                Reset layout
-              </button>
             </section>
 
             <div ref={reviewLayoutRef} className="review-layout">
@@ -645,7 +589,7 @@ export default function App() {
             </div>
           </>
         ) : (
-          <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="Add" onAction={() => void addProject()} />
+          <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="+" onAction={() => void addProject()} />
         )}
       </main>
 
@@ -692,7 +636,7 @@ function DiffViewer({
   }
 
   return (
-    <Fragment>
+    <>
       {isTruncated ? (
         <div className="diff-truncate-notice">
           Showing first {renderedLineCount} of {totalLineCount} lines for performance.
@@ -754,7 +698,7 @@ function DiffViewer({
           })}
         </div>
       </div>
-    </Fragment>
+    </>
   );
 }
 
@@ -772,6 +716,34 @@ function FolderIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M2.25 12.75V7.5A2.25 2.25 0 0 1 4.5 5.25h5.379a2.25 2.25 0 0 1 1.591.659l1.371 1.371a2.25 2.25 0 0 0 1.591.659h5.068A2.25 2.25 0 0 1 21.75 10.5v2.25m-19.5 0v4.5A2.25 2.25 0 0 0 4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25v-4.5m-19.5 0h19.5"
+      />
+    </svg>
+  );
+}
+
+function FilesPaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h10.5" />
+    </svg>
+  );
+}
+
+function DiffPaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 4.5v15m0 0 3-3m-3 3-3-3m9-9h3m-3 6h3" />
+    </svg>
+  );
+}
+
+function NotesPaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6.75 5.25h10.5A2.25 2.25 0 0 1 19.5 7.5v6.75a2.25 2.25 0 0 1-2.25 2.25H12l-3.75 3v-3H6.75A2.25 2.25 0 0 1 4.5 14.25V7.5a2.25 2.25 0 0 1 2.25-2.25Z"
       />
     </svg>
   );
