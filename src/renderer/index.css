@@ -32,10 +32,7 @@ body,
 body {
   margin: 0;
   color: var(--text);
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 26%),
-    radial-gradient(circle at 85% 12%, rgba(113, 122, 138, 0.12), transparent 24%),
-    linear-gradient(180deg, #08090b 0%, #0c0d10 100%);
+  background: var(--bg);
 }
 
 body.is-resizing,
@@ -69,8 +66,7 @@ textarea {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background:
-    linear-gradient(180deg, rgba(20, 22, 27, 0.9), rgba(14, 16, 20, 0.82));
+  background: rgba(16, 18, 22, 0.94);
   border-right: 1px solid var(--border);
   backdrop-filter: blur(24px);
 }
@@ -125,9 +121,7 @@ textarea {
   width: 11px;
   height: 11px;
   border-radius: 999px;
-  background:
-    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.34) 58%, transparent 60%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.34));
+  background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
@@ -176,14 +170,14 @@ textarea {
 }
 
 .project-button {
-  align-items: flex-start;
+  align-items: center;
   padding: 13px 14px;
 }
 
 .project-copy {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -193,13 +187,19 @@ textarea {
   font-weight: 560;
 }
 
-.project-copy p,
 .file-row-main strong,
 .diff-line code,
 .pane-header h3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--muted-strong);
 }
 
 .project-meta,
