@@ -15,7 +15,11 @@ import { CommandPaletteDialog } from "@renderer/components/command-palette";
 import { FileList } from "@renderer/components/file-list";
 import { EmptyState, LoadingState } from "@renderer/components/shared";
 import { ThreadPanel } from "@renderer/components/thread-panel";
-import { filterCommandMenuItems, type CommandMenuItem } from "@renderer/command-menu";
+import {
+  createReviewSessionCommandMenuItems,
+  filterCommandMenuItems,
+  type CommandMenuItem
+} from "@renderer/command-menu";
 import {
   createDefaultReviewLayout,
   getNormalizedPaneSizes,
@@ -33,6 +37,10 @@ import { FolderInput, Files, FileDiff as FDiff, NotebookPen } from 'lucide-react
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
   | { type: "line"; id: string; line: DiffLine };
+
+type CommandMenuView =
+  | { type: "root" }
+  | { type: "switch-session"; projectId: string; projectName: string };
 
 interface FlattenedDiffRows {
   rows: DiffRow[];
@@ -61,6 +69,7 @@ export default function App() {
   const {
     projects,
     baseBranchesByProject,
+    sessionsByProject,
     activeProjectId,
     activeSession,
     files,
@@ -109,6 +118,7 @@ export default function App() {
     projectId: string;
   } | null>(null);
   const [isCommandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [commandMenuView, setCommandMenuView] = useState<CommandMenuView>({ type: "root" });
   const [commandMenuQuery, setCommandMenuQuery] = useState("");
   const [commandMenuSelectedIndex, setCommandMenuSelectedIndex] = useState(0);
   const [isFileSearchOpen, setFileSearchOpen] = useState(false);
@@ -124,6 +134,7 @@ export default function App() {
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
   const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const activeProjectSessions = activeProjectId ? sessionsByProject[activeProjectId] ?? [] : [];
   const baseBranchOptions = useMemo(() => {
     if (!activeProject) {
       return [];
@@ -136,6 +147,17 @@ export default function App() {
   }, [activeProject, baseBranchesByProject]);
   const commandMenuItems = useMemo(
     () => [
+      ...(activeProject
+        ? [
+            {
+              id: "switch-review-session",
+              title: "Switch Review Session",
+              subtitle: `Choose a saved branch for ${activeProject.name}`,
+              keywords: ["branch", "session", "review", "switch"],
+              execute: () => showSessionPicker(activeProject.id, activeProject.name)
+            }
+          ]
+        : []),
       {
         id: "search-files",
         title: "Search Files",
@@ -154,12 +176,33 @@ export default function App() {
         }
       }
     ] satisfies Array<CommandMenuItem & { execute: () => void }>,
-    [addProject]
+    [activeProject, addProject]
   );
-  const filteredCommandMenuItems = useMemo(
-    () => filterCommandMenuItems(commandMenuItems, commandMenuQuery),
-    [commandMenuItems, commandMenuQuery]
-  );
+  const visibleCommandMenuItems = useMemo(() => {
+    if (commandMenuView.type === "root") {
+      return filterCommandMenuItems(commandMenuItems, commandMenuQuery);
+    }
+
+    return filterCommandMenuItems(
+      createReviewSessionCommandMenuItems(activeProjectSessions, activeSession?.session.id ?? null),
+      commandMenuQuery
+    ).map((item) => ({
+      ...item,
+      execute: () => {
+        closeCommandMenu();
+        if (item.sessionId !== activeSession?.session.id) {
+          void selectSession(item.projectId, item.sessionId);
+        }
+      }
+    }));
+  }, [
+    activeProjectSessions,
+    activeSession?.session.id,
+    commandMenuItems,
+    commandMenuQuery,
+    commandMenuView.type,
+    selectSession
+  ]);
   const effectivePaneOrder = reviewLayout.order;
   const visibleReviewPanes = useMemo(
     () => effectivePaneOrder.filter((paneId) => reviewLayout.visibility[paneId]),
@@ -306,13 +349,14 @@ export default function App() {
 
   useEffect(() => {
     if (!isCommandMenuOpen) {
+      setCommandMenuView({ type: "root" });
       setCommandMenuQuery("");
       setCommandMenuSelectedIndex(0);
       return;
     }
 
-    setCommandMenuSelectedIndex((index) => clamp(index, 0, Math.max(0, filteredCommandMenuItems.length - 1)));
-  }, [filteredCommandMenuItems.length, isCommandMenuOpen]);
+    setCommandMenuSelectedIndex((index) => clamp(index, 0, Math.max(0, visibleCommandMenuItems.length - 1)));
+  }, [isCommandMenuOpen, visibleCommandMenuItems.length]);
 
   useEffect(() => {
     if (!isFileSearchOpen) {
@@ -370,24 +414,28 @@ export default function App() {
       if (isCommandMenuOpen) {
         if (event.key === "Escape") {
           event.preventDefault();
-          closeCommandMenu();
+          if (commandMenuView.type === "root") {
+            closeCommandMenu();
+          } else {
+            showCommandMenuRoot();
+          }
           return;
         }
 
         if (event.key === "ArrowDown") {
           event.preventDefault();
-          setCommandMenuSelectedIndex((index) => clamp(index + 1, 0, Math.max(0, filteredCommandMenuItems.length - 1)));
+          setCommandMenuSelectedIndex((index) => clamp(index + 1, 0, Math.max(0, visibleCommandMenuItems.length - 1)));
           return;
         }
 
         if (event.key === "ArrowUp") {
           event.preventDefault();
-          setCommandMenuSelectedIndex((index) => clamp(index - 1, 0, Math.max(0, filteredCommandMenuItems.length - 1)));
+          setCommandMenuSelectedIndex((index) => clamp(index - 1, 0, Math.max(0, visibleCommandMenuItems.length - 1)));
           return;
         }
 
         if (event.key === "Enter") {
-          const selectedCommand = filteredCommandMenuItems[commandMenuSelectedIndex];
+          const selectedCommand = visibleCommandMenuItems[commandMenuSelectedIndex];
           if (!selectedCommand) {
             return;
           }
@@ -437,11 +485,12 @@ export default function App() {
     };
   }, [
     commandMenuSelectedIndex,
-    filteredCommandMenuItems,
+    commandMenuView.type,
     isCommandMenuOpen,
     isFileSearchOpen,
     fileSearchResults,
-    fileSearchSelectedIndex
+    fileSearchSelectedIndex,
+    visibleCommandMenuItems
   ]);
 
   async function applyFileSearchResult(result: FileSearchResult) {
@@ -455,6 +504,19 @@ export default function App() {
 
   function closeCommandMenu() {
     setCommandMenuOpen(false);
+    setCommandMenuView({ type: "root" });
+    setCommandMenuQuery("");
+    setCommandMenuSelectedIndex(0);
+  }
+
+  function showCommandMenuRoot() {
+    setCommandMenuView({ type: "root" });
+    setCommandMenuQuery("");
+    setCommandMenuSelectedIndex(0);
+  }
+
+  function showSessionPicker(projectId: string, projectName: string) {
+    setCommandMenuView({ type: "switch-session", projectId, projectName });
     setCommandMenuQuery("");
     setCommandMenuSelectedIndex(0);
   }
@@ -469,8 +531,7 @@ export default function App() {
     setBaseBranchMenuOpen(false);
     setProjectContextMenu(null);
     closeFileSearch();
-    setCommandMenuQuery("");
-    setCommandMenuSelectedIndex(0);
+    showCommandMenuRoot();
     setCommandMenuOpen(true);
   }
 
@@ -915,9 +976,9 @@ export default function App() {
 
       <CommandPaletteDialog
         open={isCommandMenuOpen}
-        label="Command menu"
+        label={commandMenuView.type === "root" ? "Command menu" : "Switch review session"}
         value={commandMenuQuery}
-        placeholder="Search commands"
+        placeholder={commandMenuView.type === "root" ? "Search commands" : "Search branches and sessions"}
         inputRef={commandMenuInputRef}
         onClose={closeCommandMenu}
         onValueChange={(value) => {
@@ -925,10 +986,19 @@ export default function App() {
           setCommandMenuSelectedIndex(0);
         }}
       >
-        {filteredCommandMenuItems.length === 0 ? (
-          <p className="command-palette-state">No matching commands.</p>
+        {visibleCommandMenuItems.length === 0 ? (
+          <p className="command-palette-state">
+            {commandMenuView.type === "root"
+              ? "No matching commands."
+              : !activeProject
+                ? "No project selected."
+                : activeProjectSessions.length === 0
+                  ? `No saved sessions found for ${activeProject.name}.`
+                  : "No matching sessions."
+            }
+          </p>
         ) : (
-          filteredCommandMenuItems.map((command, index) => (
+          visibleCommandMenuItems.map((command, index) => (
             <button
               key={command.id}
               className={`command-palette-item ${index === commandMenuSelectedIndex ? "command-palette-item-active" : ""}`}
