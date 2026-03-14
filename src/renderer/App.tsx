@@ -17,6 +17,15 @@ import { FileList } from "@renderer/components/file-list";
 import { EmptyState, LoadingState } from "@renderer/components/shared";
 import { ThreadPanel } from "@renderer/components/thread-panel";
 import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarProvider
+} from "@renderer/components/ui/sidebar";
+import {
   createBranchCommandMenuItems,
   filterCommandMenuItems,
   type CommandMenuItem
@@ -33,7 +42,7 @@ import {
 } from "@renderer/layout/review-layout";
 import { useAppStore } from "@renderer/store/app-store";
 import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
-import { FolderInput, Files, FileDiff as FDiff, NotebookPen, X } from 'lucide-react';
+import { FolderInput, Files, FileDiff as FDiff, NotebookPen, Settings, X } from 'lucide-react';
 import { PinList } from "./components/pin-list";
 
 type DiffRow =
@@ -1021,9 +1030,10 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell" style={shellStyle}>
-      <aside className="sidebar">
-        <div className="sidebar-header" ref={sidebarHeaderRef}>
+    <SidebarProvider>
+      <div className="app-shell" style={shellStyle}>
+        <Sidebar>
+          <SidebarHeader ref={sidebarHeaderRef}>
           <div className="sidebar-title" ref={sidebarTitleRef}>
             <div>
               <h1 className="brand-title">
@@ -1040,9 +1050,9 @@ export default function App() {
           >
             <FolderInput style={{ paddingTop: "25%" }} />
           </button>
-        </div>
+          </SidebarHeader>
 
-        <div className="sidebar-scroll">
+          <SidebarContent className="sidebar-scroll">
           {projects.length === 0 ? (
             <EmptyState title="No repos" body="Add a local Git repo." actionLabel="+" onAction={() => void addProject()} />
           ) : (
@@ -1081,31 +1091,44 @@ export default function App() {
               }}
             />
           )}
-        </div>
+          </SidebarContent>
 
-        {projectContextMenu ? (
-          <div
-            className="context-menu"
-            style={{ left: `${projectContextMenu.x}px`, top: `${projectContextMenu.y}px` }}
-            role="menu"
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <button className="context-menu-item context-menu-item-danger" role="menuitem" onClick={deleteProjectFromContextMenu}>
-              Delete Project
-            </button>
-          </div>
-        ) : null}
-      </aside>
+          {projectContextMenu ? (
+            <div
+              className="context-menu"
+              style={{ left: `${projectContextMenu.x}px`, top: `${projectContextMenu.y}px` }}
+              role="menu"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <button className="context-menu-item context-menu-item-danger" role="menuitem" onClick={deleteProjectFromContextMenu}>
+                Delete Project
+              </button>
+            </div>
+          ) : null}
 
-      <div
-        className="sidebar-resizer"
-        role="separator"
-        aria-label="Resize sidebar"
-        aria-orientation="vertical"
-        onPointerDown={beginSidebarResize}
-      />
+          <SidebarFooter>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <button type="button" className="project-button project-row sidebar-settings-button" aria-label="Settings">
+                  <div className="project-copy">
+                    <Settings className="project-icon" />
+                    <strong>Settings</strong>
+                  </div>
+                </button>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarFooter>
+        </Sidebar>
 
-      <main className="main-pane">
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          onPointerDown={beginSidebarResize}
+        />
+
+        <main className="main-pane">
         <header className="topbar">
           <div className="topbar-title">
             <h2>{activeSession ? activeSession.project.name : "Code Watch"}</h2>
@@ -1224,9 +1247,9 @@ export default function App() {
         ) : (
           <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="+" onAction={() => void addProject()} />
         )}
-      </main>
+        </main>
 
-      <CommandPaletteDialog
+        <CommandPaletteDialog
         open={isCommandMenuOpen}
         label={commandMenuView.type === "root" ? "Command menu" : "Switch review branch"}
         value={commandMenuQuery}
@@ -1268,9 +1291,9 @@ export default function App() {
             </button>
           ))
         )}
-      </CommandPaletteDialog>
+        </CommandPaletteDialog>
 
-      <CommandPaletteDialog
+        <CommandPaletteDialog
         open={isFileSearchOpen}
         label="Search files"
         value={fileSearchQuery}
@@ -1307,15 +1330,16 @@ export default function App() {
             </button>
           ))
         )}
-      </CommandPaletteDialog>
+        </CommandPaletteDialog>
 
-      {error ? (
-        <div className="toast">
-          <span>{error}</span>
-          <button onClick={clearError}>Dismiss</button>
-        </div>
-      ) : null}
-    </div>
+        {error ? (
+          <div className="toast">
+            <span>{error}</span>
+            <button onClick={clearError}>Dismiss</button>
+          </div>
+        ) : null}
+      </div>
+    </SidebarProvider>
   );
 }
 
