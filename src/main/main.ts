@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell } from "electron";
 import log from "electron-log/main";
 import { createDatabase } from "@main/db/client";
 import { registerIpcHandlers, broadcast } from "@main/ipc";
+import { FileSearchService } from "@main/services/file-search";
 import { GitService } from "@main/services/git";
 import { ProjectService } from "@main/services/projects";
 import { ReviewService } from "@main/services/reviews";
@@ -47,11 +48,12 @@ async function bootstrap(): Promise<void> {
   const { db } = createDatabase();
   const git = new GitService();
   const projects = new ProjectService(db, git);
+  const search = new FileSearchService(db);
   const reviews = new ReviewService(db, git, broadcast);
   const threads = new ThreadService(db);
   const watchers = new RepoWatcherRegistry(git, broadcast);
 
-  registerIpcHandlers({ projects, reviews, threads, watchers });
+  registerIpcHandlers({ projects, search, reviews, threads, watchers });
 
   const projectRows = await projects.list();
   await watchers.primeExisting(projectRows.map((project) => ({ id: project.id, repoPath: project.repoPath })));

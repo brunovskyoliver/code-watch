@@ -122,6 +122,9 @@ describe("app-store", () => {
         resolve: vi.fn(),
         reopen: vi.fn()
       },
+      search: {
+        files: vi.fn(async () => [])
+      },
       events: {
         onRepoChanged: vi.fn(() => () => undefined),
         onBranchChanged: vi.fn(() => () => undefined),

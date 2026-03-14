@@ -143,6 +143,13 @@ export const reviewSessionEventSchema = z.object({
   sessionId: z.string()
 });
 
+export const fileSearchResultSchema = z.object({
+  projectId: z.string(),
+  projectName: z.string(),
+  sessionId: z.string(),
+  filePath: z.string()
+});
+
 export type ThreadStatus = z.infer<typeof threadStatusSchema>;
 export type ThreadSide = z.infer<typeof threadSideSchema>;
 export type FileStatus = z.infer<typeof fileStatusSchema>;
@@ -160,6 +167,7 @@ export type ReviewSessionDetail = z.infer<typeof reviewSessionDetailSchema>;
 export type ReviewOpenResult = z.infer<typeof reviewOpenResultSchema>;
 export type RepoStateEvent = z.infer<typeof repoStateEventSchema>;
 export type ReviewSessionEvent = z.infer<typeof reviewSessionEventSchema>;
+export type FileSearchResult = z.infer<typeof fileSearchResultSchema>;
 
 export const THREAD_PREVIEW_COMMENT_COUNT = 2;
 export const THREAD_PAGE_SIZE = 20;
@@ -187,6 +195,9 @@ export interface CodeWatchApi {
     addComment: (threadId: string, body: string) => Promise<PaginatedComments>;
     resolve: (threadId: string) => Promise<ThreadPreview>;
     reopen: (threadId: string) => Promise<ThreadPreview>;
+  };
+  search: {
+    files: (query: string, limit?: number) => Promise<FileSearchResult[]>;
   };
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => () => void;

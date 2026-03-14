@@ -24,7 +24,7 @@ import {
   type ReviewPaneId
 } from "@renderer/layout/review-layout";
 import { useAppStore } from "@renderer/store/app-store";
-import type { DiffLine, FileDiff, ThreadAnchor, ThreadPreview } from "@shared/types";
+import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
 import { FolderInput, Files, FileDiff as FDiff, NotebookPen } from 'lucide-react';
 
 type DiffRow =
@@ -45,6 +45,8 @@ const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
 const MAX_RENDERED_DIFF_LINES = 1000;
 const MIN_PANE_WIDTH = 180;
+const FILE_SEARCH_LIMIT = 5;
+const FILE_SEARCH_DEBOUNCE_MS = 120;
 
 const paneLabels: Record<ReviewPaneId, string> = {
   files: "Files",
@@ -76,9 +78,11 @@ export default function App() {
     removeProject,
     selectProject,
     refreshProject,
+    selectSession,
     selectFile,
     listBranches,
     updateBaseBranch,
+    searchFiles,
     beginThread,
     selectThread,
     loadOlderComments,
@@ -101,7 +105,13 @@ export default function App() {
     y: number;
     projectId: string;
   } | null>(null);
+  const [isFileSearchOpen, setFileSearchOpen] = useState(false);
+  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[]>([]);
+  const [fileSearchLoading, setFileSearchLoading] = useState(false);
+  const [fileSearchSelectedIndex, setFileSearchSelectedIndex] = useState(0);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
+  const fileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
   const deferredFilePath = useDeferredValue(selectedFilePath);
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
@@ -230,6 +240,116 @@ export default function App() {
     },
     []
   );
+
+  useEffect(() => {
+    if (!isFileSearchOpen) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => fileSearchInputRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [isFileSearchOpen]);
+
+  useEffect(() => {
+    if (!isFileSearchOpen) {
+      setFileSearchResults([]);
+      setFileSearchLoading(false);
+      setFileSearchSelectedIndex(0);
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setFileSearchLoading(true);
+      void searchFiles(fileSearchQuery, FILE_SEARCH_LIMIT)
+        .then((results) => {
+          if (cancelled) {
+            return;
+          }
+          setFileSearchResults(results);
+          setFileSearchSelectedIndex((index) => clamp(index, 0, Math.max(0, results.length - 1)));
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setFileSearchLoading(false);
+          }
+        });
+    }, FILE_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [isFileSearchOpen, fileSearchQuery, searchFiles]);
+
+  useEffect(() => {
+    const handleGlobalFileSearchKeys = (event: KeyboardEvent) => {
+      if (
+        event.key === "/" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !isEditableTarget(event.target)
+      ) {
+        event.preventDefault();
+        setBaseBranchMenuOpen(false);
+        setProjectContextMenu(null);
+        setFileSearchQuery("");
+        setFileSearchSelectedIndex(0);
+        setFileSearchOpen(true);
+        return;
+      }
+
+      if (!isFileSearchOpen) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setFileSearchOpen(false);
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setFileSearchSelectedIndex((index) => clamp(index + 1, 0, Math.max(0, fileSearchResults.length - 1)));
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setFileSearchSelectedIndex((index) => clamp(index - 1, 0, Math.max(0, fileSearchResults.length - 1)));
+        return;
+      }
+
+      if (event.key === "Enter") {
+        const selectedResult = fileSearchResults[fileSearchSelectedIndex];
+        if (!selectedResult) {
+          return;
+        }
+        event.preventDefault();
+        void applyFileSearchResult(selectedResult);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalFileSearchKeys);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalFileSearchKeys);
+    };
+  }, [isFileSearchOpen, fileSearchResults, fileSearchSelectedIndex]);
+
+  const applyFileSearchResult = async (result: FileSearchResult) => {
+    setFileSearchOpen(false);
+    setFileSearchQuery("");
+    setFileSearchSelectedIndex(0);
+    if (activeProjectId !== result.projectId) {
+      await selectProject(result.projectId);
+    }
+    await selectSession(result.projectId, result.sessionId);
+    await selectFile(result.filePath);
+  };
 
   const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -661,6 +781,54 @@ export default function App() {
         )}
       </main>
 
+      {isFileSearchOpen ? (
+        <div
+          className="command-palette-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setFileSearchOpen(false);
+            }
+          }}
+        >
+          <div className="command-palette" role="dialog" aria-modal="true" aria-label="Search files" onMouseDown={(event) => event.stopPropagation()}>
+            <input
+              ref={fileSearchInputRef}
+              className="command-palette-input"
+              value={fileSearchQuery}
+              onChange={(event) => {
+                setFileSearchQuery(event.target.value);
+                setFileSearchSelectedIndex(0);
+              }}
+              placeholder="Search files across projects"
+              aria-label="Search files"
+            />
+            <div className="command-palette-list">
+              {fileSearchLoading && fileSearchResults.length === 0 ? (
+                <p className="command-palette-state">Searching...</p>
+              ) : fileSearchResults.length === 0 ? (
+                <p className="command-palette-state">No matching files.</p>
+              ) : (
+                fileSearchResults.map((result, index) => (
+                  <button
+                    key={`${result.projectId}:${result.sessionId}:${result.filePath}`}
+                    className={`command-palette-item ${index === fileSearchSelectedIndex ? "command-palette-item-active" : ""}`}
+                    onMouseEnter={() => setFileSearchSelectedIndex(index)}
+                    onClick={() => {
+                      void applyFileSearchResult(result);
+                    }}
+                  >
+                    <div className="command-palette-item-main">
+                      <strong>{result.filePath}</strong>
+                      <p>{result.projectName}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="toast">
           <span>{error}</span>
@@ -874,6 +1042,17 @@ function toAnchor(filePath: string, line: DiffLine): Omit<ThreadAnchor, "session
 
 function shortSha(sha: string): string {
   return sha.slice(0, 7);
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  if (target.isContentEditable) {
+    return true;
+  }
+  return tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
 function clampSidebarWidth(value: number): number {

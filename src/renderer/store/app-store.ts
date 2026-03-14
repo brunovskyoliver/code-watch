@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   ChangedFile,
+  FileSearchResult,
   FileDiff,
   PaginatedComments,
   ProjectSummary,
@@ -38,6 +39,7 @@ interface AppState {
   selectFile: (filePath: string) => Promise<void>;
   listBranches: (projectId: string) => Promise<string[]>;
   updateBaseBranch: (projectId: string, baseBranch: string) => Promise<void>;
+  searchFiles: (query: string, limit?: number) => Promise<FileSearchResult[]>;
   beginThread: (anchor: ThreadAnchor) => void;
   selectThread: (threadId: string) => Promise<void>;
   loadOlderComments: () => Promise<void>;
@@ -268,6 +270,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().refreshProject(projectId);
     } catch (error) {
       set({ error: toErrorMessage(error) });
+    }
+  },
+  searchFiles: async (query, limit) => {
+    try {
+      return await window.codeWatch.search.files(query, limit);
+    } catch (error) {
+      set({ error: toErrorMessage(error) });
+      return [];
     }
   },
   beginThread: (anchor) => {
