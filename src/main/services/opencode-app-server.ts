@@ -1,5 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import log from "electron-log/main";
 import type { GitService } from "@main/services/git";
 import { CodexAppServerService } from "@main/services/codex-app-server";
 import type {
@@ -10,10 +11,26 @@ import type {
 } from "@shared/types";
 
 const OPENCODE_VERSION_TIMEOUT_MS = 8_000;
-const OPENCODE_RUN_TIMEOUT_MS = 60_000;
+const DEFAULT_OPENCODE_RUN_TIMEOUT_MS = 180_000;
+
+function resolveOpenCodeRunTimeoutMs(): number {
+  const raw = process.env.OPENCODE_RUN_TIMEOUT_MS;
+  if (!raw) {
+    return DEFAULT_OPENCODE_RUN_TIMEOUT_MS;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_OPENCODE_RUN_TIMEOUT_MS;
+  }
+
+  return parsed;
+}
 
 export class OpenCodeAppServerService extends CodexAppServerService {
   private readonly runExecFile: typeof execFile;
+  private readonly runTimeoutMs: number;
+  private readonly model: string | null;
 
   constructor(git: GitService, dispatchEvent: (channel: string, payload: unknown) => void, executable = "opencode") {
     super(git, dispatchEvent, {
@@ -22,6 +39,8 @@ export class OpenCodeAppServerService extends CodexAppServerService {
       logPrefix: "opencode"
     });
     this.runExecFile = execFile;
+    this.runTimeoutMs = resolveOpenCodeRunTimeoutMs();
+    this.model = process.env.OPENCODE_MODEL?.trim() || null;
   }
 
   override async getStatus(): Promise<{ available: boolean; version: string | null; reason: string | null }> {
@@ -42,27 +61,37 @@ export class OpenCodeAppServerService extends CodexAppServerService {
   }
 
   protected override async runStructuredTurn(input: { cwd: string; prompt: string }): Promise<unknown> {
+    const args = ["run", "--format", "json"];
+    if (this.model) {
+      args.push("--model", this.model);
+    }
+    args.push("--dir", input.cwd, input.prompt);
+    const env = buildOpenCodeEnvironment(process.env, this.model);
+
+    if (process.env.OPENCODE_DEBUG === "1") {
+      return this.runStructuredTurnStreaming(args, env);
+    }
+
     let stdout: string;
     try {
-      const result = await promisify(this.runExecFile)("opencode", [
-        "run",
-        "--format",
-        "json",
-        "--dir",
-        input.cwd,
-        input.prompt
-      ], {
-        timeout: OPENCODE_RUN_TIMEOUT_MS,
+      const result = await promisify(this.runExecFile)("opencode", args, {
+        env,
+        timeout: this.runTimeoutMs,
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024
       });
-      stdout = result.stdout;
+      stdout = typeof result.stdout === "string" ? result.stdout : String(result.stdout ?? "");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown OpenCode error";
+      const stderr = getErrorText(error, "stderr");
       if (typeof message === "string" && message.toLowerCase().includes("timed out")) {
-        throw new Error("OpenCode run timed out while drafting. Check provider auth/model config or try again.");
+        throw new Error(
+          `OpenCode run timed out after ${Math.round(this.runTimeoutMs / 1000)}s while drafting. ` +
+          "Run `opencode auth list` to confirm provider auth, and test `opencode run --format json \"hello\"` in the same repo." +
+          (stderr ? ` OpenCode stderr: ${stderr}` : "")
+        );
       }
-      throw new Error(`OpenCode run failed: ${message}`);
+      throw new Error(`OpenCode run failed: ${message}${stderr ? ` | stderr: ${stderr}` : ""}`);
     }
 
     const text = extractOpenCodeText(stdout);
@@ -85,6 +114,83 @@ export class OpenCodeAppServerService extends CodexAppServerService {
     action: GitDraftAction;
   }): Promise<GitDraftResult> {
     return super.draftGitArtifacts(input);
+  }
+
+  private async runStructuredTurnStreaming(args: string[], env: NodeJS.ProcessEnv): Promise<unknown> {
+    return await new Promise((resolve, reject) => {
+      log.info("[opencode] run:spawn", {
+        args,
+        model: this.model,
+        timeoutMs: this.runTimeoutMs
+      });
+
+      const child = spawn("opencode", args, {
+        env,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        child.kill("SIGTERM");
+        reject(new Error(
+          `OpenCode run timed out after ${Math.round(this.runTimeoutMs / 1000)}s while drafting.` +
+          (stderr ? ` OpenCode stderr: ${compactText(stderr)}` : "")
+        ));
+      }, this.runTimeoutMs);
+
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
+        log.info("[opencode] run:stdout", compactText(chunk));
+      });
+
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+        log.warn("[opencode] run:stderr", compactText(chunk));
+      });
+
+      child.once("error", (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(`OpenCode run failed: ${error.message}`));
+      });
+
+      child.once("close", () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+
+        const text = extractOpenCodeText(stdout);
+        if (!text) {
+          reject(new Error(
+            `OpenCode run did not return assistant text.` +
+            (stdout ? ` stdout: ${compactText(stdout)}` : "") +
+            (stderr ? ` stderr: ${compactText(stderr)}` : "")
+          ));
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(text));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown parse error";
+          reject(new Error(`OpenCode returned invalid JSON: ${message}`));
+        }
+      });
+    });
   }
 }
 
@@ -114,4 +220,67 @@ function extractOpenCodeText(stdout: string): string | null {
   }
 
   return lastText;
+}
+
+function getErrorText(error: unknown, key: "stderr" | "stdout"): string {
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+
+  const value = (error as Record<string, unknown>)[key];
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return compactText(value);
+}
+
+function buildOpenCodeEnvironment(baseEnv: NodeJS.ProcessEnv, model: string | null): NodeJS.ProcessEnv {
+  const config = parseOpenCodeConfig(baseEnv.OPENCODE_CONFIG_CONTENT);
+
+  const tools = {
+    ...(isRecord(config.tools) ? config.tools : {}),
+    bash: false,
+    read: false,
+    edit: false,
+    write: false,
+    grep: false,
+    glob: false
+  };
+
+  const nextConfig: Record<string, unknown> = {
+    ...config,
+    share: config.share ?? "disabled",
+    tools
+  };
+
+  if (model && nextConfig.model == null) {
+    nextConfig.model = model;
+  }
+
+  return {
+    ...baseEnv,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify(nextConfig)
+  };
+}
+
+function parseOpenCodeConfig(value: string | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function compactText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 400);
 }
