@@ -34,6 +34,7 @@ import {
 import { useAppStore } from "@renderer/store/app-store";
 import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
 import { FolderInput, Files, FileDiff as FDiff, NotebookPen, X } from 'lucide-react';
+import { PinList } from "./components/pin-list";
 
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
@@ -89,6 +90,7 @@ export default function App() {
     addProject,
     reorderProjects,
     removeProject,
+    togglePinProject,
     selectProject,
     refreshProject,
     selectSession,
@@ -1044,34 +1046,40 @@ export default function App() {
           {projects.length === 0 ? (
             <EmptyState title="No repos" body="Add a local Git repo." actionLabel="+" onAction={() => void addProject()} />
           ) : (
-            projects.map((project) => {
-              const isActive = project.id === activeProjectId;
+            <PinList
+              items={projects}
+              itemKey={(p) => p.id}
+              isPinned={(p) => p.isPinned}
+              onTogglePin={(p) => void togglePinProject(p.id)}
+              labels={{ pinned: "Pinned", unpinned: "Repositories" }}
+              renderItem={(project) => {
+                const isActive = project.id === activeProjectId;
 
-              return (
-                <button
-                  key={project.id}
-                  className={`project-button project-row ${isActive ? "project-row-active" : ""} ${draggedProjectId === project.id ? "project-row-dragging" : ""
-                    } ${dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
-                    }`}
-                  draggable
-                  onDragStart={(event) => beginProjectReorder(event, project.id)}
-                  onDragOver={(event) => handleProjectDragOver(event, project.id)}
-                  onDrop={(event) => handleProjectDrop(event, project.id)}
-                  onDragEnd={clearProjectDragState}
-                  onClick={() => {
-                    startTransition(() => {
-                      void selectProject(project.id);
-                    });
-                  }}
-                  onContextMenu={(event) => openProjectContextMenu(event, project.id)}
-                >
-                  <div className="project-copy">
-                    <FolderIcon />
-                    <strong>{project.name}</strong>
-                  </div>
-                </button>
-              );
-            })
+                return (
+                  <button
+                    className={`project-button project-row ${isActive ? "project-row-active" : ""} ${draggedProjectId === project.id ? "project-row-dragging" : ""
+                      } ${dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
+                      }`}
+                    draggable
+                    onDragStart={(event) => beginProjectReorder(event, project.id)}
+                    onDragOver={(event) => handleProjectDragOver(event, project.id)}
+                    onDrop={(event) => handleProjectDrop(event, project.id)}
+                    onDragEnd={clearProjectDragState}
+                    onClick={() => {
+                      startTransition(() => {
+                        void selectProject(project.id);
+                      });
+                    }}
+                    onContextMenu={(event) => openProjectContextMenu(event, project.id)}
+                  >
+                    <div className="project-copy">
+                      <FolderIcon />
+                      <strong>{project.name}</strong>
+                    </div>
+                  </button>
+                );
+              }}
+            />
           )}
         </div>
 

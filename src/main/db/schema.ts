@@ -6,6 +6,7 @@ export const projectsTable = sqliteTable("projects", {
   repoPath: text("repo_path").notNull().unique(),
   defaultBaseBranch: text("default_base_branch").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  isPinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at").notNull(),
   lastOpenedAt: integer("last_opened_at").notNull()
 });

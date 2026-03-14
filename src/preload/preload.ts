@@ -14,6 +14,7 @@ const api: CodeWatchApi = {
     list: () => ipcRenderer.invoke("projects:list"),
     reorder: (projectIds) => ipcRenderer.invoke("projects:reorder", projectIds),
     remove: (projectId) => ipcRenderer.invoke("projects:remove", projectId),
+    togglePin: (projectId) => ipcRenderer.invoke("projects:togglePin", projectId),
     listBranches: (projectId) => ipcRenderer.invoke("projects:listBranches", projectId),
     updateBaseBranch: (projectId, baseBranch) => ipcRenderer.invoke("projects:updateBaseBranch", projectId, baseBranch)
   },
