@@ -43,7 +43,8 @@ export class ProjectService {
         lastOpenedAt: project.lastOpenedAt,
         currentBranch: state?.currentBranch ?? null,
         headSha: state?.headSha ?? null,
-        dirty: state?.dirty ?? false
+        dirty: state?.dirty ?? false,
+        aheadCount: state?.aheadCount ?? 0
       };
     });
   }
@@ -176,7 +177,8 @@ export class ProjectService {
       lastOpenedAt: project.lastOpenedAt,
       currentBranch: state?.currentBranch ?? null,
       headSha: state?.headSha ?? null,
-      dirty: state?.dirty ?? false
+      dirty: state?.dirty ?? false,
+      aheadCount: state?.aheadCount ?? 0
     };
   }
 }
