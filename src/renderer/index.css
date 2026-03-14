@@ -80,13 +80,17 @@ textarea,
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-width, 248px) 10px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: rgba(16, 18, 22, 0.94);
   border-right: 1px solid var(--border);
   backdrop-filter: blur(24px);
@@ -316,8 +320,10 @@ body.is-resizing .sidebar-resizer::before {
 .main-pane {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .topbar {
