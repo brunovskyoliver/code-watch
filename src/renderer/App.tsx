@@ -52,6 +52,12 @@ import {
   MenuTrigger
 } from "@renderer/components/ui/menu";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from "@renderer/components/ui/popover";
+import { Toggle, ToggleGroup } from "@renderer/components/ui/toggle-group";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -85,6 +91,7 @@ import type {
 } from "@shared/types";
 import {
   ChevronDown,
+  ChevronRight,
   CloudUpload,
   Files,
   FileDiff as FDiff,
@@ -122,8 +129,11 @@ const MIN_PANE_WIDTH = 180;
 const FILE_SEARCH_LIMIT = 5;
 const FILE_SEARCH_DEBOUNCE_MS = 120;
 const SETTINGS_MENU_LABEL = "Settings";
+const PROVIDER_TITLE = "Provider";
 const NO_SUPPORTED_EDITOR_ERROR = "No supported editor found. Install Visual Studio Code or Cursor.";
 const CODEX_NOT_AVAILABLE_ERROR = "Codex CLI is unavailable. Install Codex CLI and confirm `codex app-server` works in your terminal.";
+
+type AssistantProvider = "codex" | "opencode";
 
 const keybindingShortcutFallbacks: Record<string, string> = {
   "command-menu.open": "mod+/",
@@ -227,6 +237,7 @@ export default function App() {
   const [isUnsupportedEditorDialogOpen, setUnsupportedEditorDialogOpen] = useState(false);
   const [gitActionsMenuWidth, setGitActionsMenuWidth] = useState(180);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const [assistantProvider, setAssistantProvider] = useState<AssistantProvider>("codex");
   const [gitActionLoading, setGitActionLoading] = useState<GitDraftAction | GitRunAction | null>(null);
   const [draftResult, setDraftResult] = useState<GitDraftResult | null>(null);
   const [draftDialogOpen, setDraftDialogOpen] = useState(false);
@@ -854,6 +865,13 @@ export default function App() {
     }
   }
 
+  function handleProviderChange(nextValues: string[]) {
+    const nextProvider = nextValues[0];
+    if (nextProvider === "codex" || nextProvider === "opencode") {
+      setAssistantProvider(nextProvider);
+    }
+  }
+
   function setUiError(error: unknown, fallbackMessage: string) {
     const message = error instanceof Error ? error.message : fallbackMessage;
     useAppStore.setState({ error: message });
@@ -1410,6 +1428,36 @@ export default function App() {
                     </div>
                   </MenuTrigger>
                   <MenuPanel sideOffset={8}>
+                    <Popover>
+                      <PopoverTrigger
+                        type="button"
+                        className="cw-menu-item sidebar-provider-menu-trigger"
+                        aria-label="Choose assistant provider"
+                        openOnHover
+                        delay={100}
+                        closeDelay={80}
+                      >
+                        <span>{PROVIDER_TITLE}</span>
+                        <ChevronRight className="sidebar-provider-menu-icon" />
+                      </PopoverTrigger>
+                      <PopoverContent side="right" align="start" sideOffset={12} alignOffset={-6}>
+                        <div className="sidebar-settings-popover" role="group" aria-label="Assistant provider settings">
+                          <div className="sidebar-provider-popover-layout">
+                            <p className="sidebar-settings-popover-title">{PROVIDER_TITLE}</p>
+                            <ToggleGroup
+                              orientation="vertical"
+                              className="sidebar-provider-toggle-group"
+                              value={[assistantProvider]}
+                              onValueChange={handleProviderChange}
+                            >
+                              <Toggle value="codex" className="sidebar-provider-toggle">Codex</Toggle>
+                              <Toggle value="opencode" className="sidebar-provider-toggle">OpenCode</Toggle>
+                            </ToggleGroup>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <MenuSeparator />
                     <MenuGroup>
                       <MenuItem onClick={() => void editKeybindings()}>
                         <span>Edit keybindings</span>

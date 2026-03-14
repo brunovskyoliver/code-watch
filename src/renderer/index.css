@@ -262,6 +262,81 @@ textarea,
   width: 100%;
 }
 
+.cw-popover-positioner {
+  z-index: 120;
+}
+
+.cw-popover-popup {
+  min-width: 164px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(17, 19, 23, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+  backdrop-filter: blur(14px);
+}
+
+.sidebar-settings-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-provider-popover-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-provider-menu-trigger {
+  cursor: default;
+}
+
+.sidebar-provider-menu-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.sidebar-settings-popover-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.sidebar-provider-toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cw-toggle {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 6px 9px;
+  min-height: 48px;
+  font-size: 12px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.cw-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.cw-toggle[data-pressed] {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
 .cw-menu-positioner {
   z-index: 120;
 }
