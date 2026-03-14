@@ -6,6 +6,7 @@ import {
   startTransition,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -50,7 +51,7 @@ interface FlattenedDiffRows {
 }
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
-const MIN_SIDEBAR_WIDTH = 180;
+const DEFAULT_MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
 const MAX_RENDERED_DIFF_LINES = 1000;
@@ -105,6 +106,7 @@ export default function App() {
   } = useAppStore();
 
   const [sidebarWidth, setSidebarWidth] = useState(248);
+  const [sidebarMinWidth, setSidebarMinWidth] = useState(DEFAULT_MIN_SIDEBAR_WIDTH);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
   const [layoutProjectId, setLayoutProjectId] = useState<string | null>(null);
   const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
@@ -126,6 +128,9 @@ export default function App() {
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
   const [fileSearchSelectedIndex, setFileSearchSelectedIndex] = useState(0);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
+  const sidebarHeaderRef = useRef<HTMLDivElement | null>(null);
+  const sidebarTitleRef = useRef<HTMLDivElement | null>(null);
+  const sidebarAddRepoButtonRef = useRef<HTMLButtonElement | null>(null);
   const commandMenuInputRef = useRef<HTMLInputElement | null>(null);
   const fileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
@@ -254,10 +259,48 @@ export default function App() {
     if (storedSidebarWidth) {
       const parsedWidth = Number.parseInt(storedSidebarWidth, 10);
       if (!Number.isNaN(parsedWidth)) {
-        setSidebarWidth(clampSidebarWidth(parsedWidth));
+        setSidebarWidth(parsedWidth);
       }
     }
   }, []);
+
+  useLayoutEffect(() => {
+    const sidebarHeader = sidebarHeaderRef.current;
+    const sidebarTitle = sidebarTitleRef.current;
+    const addRepoButton = sidebarAddRepoButtonRef.current;
+    if (!sidebarHeader || !sidebarTitle || !addRepoButton) {
+      return;
+    }
+
+    const measureSidebarMinimumWidth = () => {
+      const computedStyles = window.getComputedStyle(sidebarHeader);
+      const gapValue = Number.parseFloat(computedStyles.columnGap || computedStyles.gap || "0") || 0;
+      const paddingLeft = Number.parseFloat(computedStyles.paddingLeft) || 0;
+      const paddingRight = Number.parseFloat(computedStyles.paddingRight) || 0;
+      const requiredWidth = Math.ceil(
+        sidebarTitle.scrollWidth + addRepoButton.getBoundingClientRect().width + gapValue + paddingLeft + paddingRight
+      );
+
+      setSidebarMinWidth(Math.max(DEFAULT_MIN_SIDEBAR_WIDTH, requiredWidth));
+    };
+
+    measureSidebarMinimumWidth();
+
+    const resizeObserver = new ResizeObserver(measureSidebarMinimumWidth);
+    resizeObserver.observe(sidebarHeader);
+    resizeObserver.observe(sidebarTitle);
+    resizeObserver.observe(addRepoButton);
+    window.addEventListener("resize", measureSidebarMinimumWidth);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", measureSidebarMinimumWidth);
+    };
+  }, []);
+
+  useEffect(() => {
+    setSidebarWidth((previousWidth) => clampSidebarWidth(previousWidth, sidebarMinWidth));
+  }, [sidebarMinWidth]);
 
   useEffect(() => {
     if (!activeProjectId) {
@@ -573,7 +616,7 @@ export default function App() {
     document.body.classList.add("is-resizing");
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      setSidebarWidth(clampSidebarWidth(startWidth + moveEvent.clientX - startX));
+      setSidebarWidth(clampSidebarWidth(startWidth + moveEvent.clientX - startX, sidebarMinWidth));
     };
 
     const handlePointerUp = () => {
@@ -818,8 +861,8 @@ export default function App() {
   return (
     <div className="app-shell" style={shellStyle}>
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <div className="sidebar-title">
+        <div className="sidebar-header" ref={sidebarHeaderRef}>
+          <div className="sidebar-title" ref={sidebarTitleRef}>
             <div>
               <h1 className="brand-title">
                 <span className="brand-code">Code</span> <span className="brand-watch">Watch</span>
@@ -827,7 +870,12 @@ export default function App() {
               <p>{projects.length} repo{projects.length === 1 ? "" : "s"}</p>
             </div>
           </div>
-          <button className="ghost-button" onClick={() => void addProject()} aria-label="Add repository">
+          <button
+            ref={sidebarAddRepoButtonRef}
+            className="ghost-button"
+            onClick={() => void addProject()}
+            aria-label="Add repository"
+          >
                         <FolderInput style={{ paddingTop:"25%"}} />
           </button>
         </div>
@@ -1313,8 +1361,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
-function clampSidebarWidth(value: number): number {
-  return clamp(value, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+function clampSidebarWidth(value: number, minSidebarWidth: number): number {
+  return clamp(value, minSidebarWidth, MAX_SIDEBAR_WIDTH);
 }
 
 function toUniqueBranches(branches: string[], preferredBranch: string | null): string[] {
