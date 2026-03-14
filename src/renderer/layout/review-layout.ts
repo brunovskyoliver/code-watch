@@ -1,4 +1,6 @@
 export const reviewPaneIds = ["files", "diff", "threads"] as const;
+export const REVIEW_LAYOUT_STORAGE_KEY_PREFIX = "code-watch.review-layout.v2";
+export const LEGACY_REVIEW_LAYOUT_STORAGE_KEY = "code-watch.review-layout.v1";
 
 export type ReviewPaneId = (typeof reviewPaneIds)[number];
 
@@ -38,6 +40,19 @@ export function parseStoredReviewLayout(raw: string | null): ReviewLayoutState {
   } catch {
     return createDefaultReviewLayout();
   }
+}
+
+export function getReviewLayoutStorageKey(projectId: string): string {
+  return `${REVIEW_LAYOUT_STORAGE_KEY_PREFIX}.${projectId}`;
+}
+
+export function readStoredReviewLayout(
+  storage: Pick<Storage, "getItem">,
+  projectId: string
+): ReviewLayoutState {
+  const storedLayout =
+    storage.getItem(getReviewLayoutStorageKey(projectId)) ?? storage.getItem(LEGACY_REVIEW_LAYOUT_STORAGE_KEY);
+  return parseStoredReviewLayout(storedLayout);
 }
 
 export function sanitizeReviewLayout(value: unknown): ReviewLayoutState {

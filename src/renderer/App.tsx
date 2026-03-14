@@ -17,7 +17,8 @@ import { ThreadPanel } from "@renderer/components/thread-panel";
 import {
   createDefaultReviewLayout,
   getNormalizedPaneSizes,
-  parseStoredReviewLayout,
+  getReviewLayoutStorageKey,
+  readStoredReviewLayout,
   reorderReviewPanes,
   setReviewPaneVisibility,
   type ReviewLayoutState,
@@ -39,7 +40,6 @@ interface FlattenedDiffRows {
 }
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
-const REVIEW_LAYOUT_KEY = "code-watch.review-layout.v1";
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
@@ -96,6 +96,7 @@ export default function App() {
 
   const [sidebarWidth, setSidebarWidth] = useState(248);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
+  const [layoutProjectId, setLayoutProjectId] = useState<string | null>(null);
   const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
   const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
@@ -167,17 +168,30 @@ export default function App() {
         setSidebarWidth(clampSidebarWidth(parsedWidth));
       }
     }
-
-    setReviewLayout(parseStoredReviewLayout(window.localStorage.getItem(REVIEW_LAYOUT_KEY)));
   }, []);
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setReviewLayout(createDefaultReviewLayout());
+      setLayoutProjectId(null);
+      return;
+    }
+
+    setReviewLayout(readStoredReviewLayout(window.localStorage, activeProjectId));
+    setLayoutProjectId(activeProjectId);
+  }, [activeProjectId]);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
 
   useEffect(() => {
-    window.localStorage.setItem(REVIEW_LAYOUT_KEY, JSON.stringify(reviewLayout));
-  }, [reviewLayout]);
+    if (!layoutProjectId || layoutProjectId !== activeProjectId) {
+      return;
+    }
+
+    window.localStorage.setItem(getReviewLayoutStorageKey(layoutProjectId), JSON.stringify(reviewLayout));
+  }, [activeProjectId, layoutProjectId, reviewLayout]);
 
   useEffect(() => {
     const closeProjectContextMenu = () => setProjectContextMenu(null);

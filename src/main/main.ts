@@ -1,6 +1,7 @@
 import path from "node:path";
 import { app, BrowserWindow, shell } from "electron";
 import log from "electron-log/main";
+import { configureAppDataPaths } from "@main/app-paths";
 import { createDatabase } from "@main/db/client";
 import { registerIpcHandlers, broadcast } from "@main/ipc";
 import { FileSearchService } from "@main/services/file-search";
@@ -11,6 +12,8 @@ import { ThreadService } from "@main/services/threads";
 import { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
 
 let mainWindow: BrowserWindow | null = null;
+
+configureAppDataPaths(app);
 
 async function createMainWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
