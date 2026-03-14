@@ -25,7 +25,7 @@ import {
 } from "@renderer/layout/review-layout";
 import { useAppStore } from "@renderer/store/app-store";
 import type { DiffLine, FileDiff, ThreadAnchor, ThreadPreview } from "@shared/types";
-import { FolderInput } from 'lucide-react';
+import { FolderInput, Files, FileDiff as FDiff, NotebookPen } from 'lucide-react';
 
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
@@ -569,7 +569,7 @@ export default function App() {
                   aria-label="Toggle files pane"
                   onClick={() => togglePaneVisibility("files")}
                 >
-                  <FilesPaneIcon />
+                <Files/>
                 </button>
                 <button
                   type="button"
@@ -578,7 +578,7 @@ export default function App() {
                   aria-label="Toggle diff pane"
                   onClick={() => togglePaneVisibility("diff")}
                 >
-                  <DiffPaneIcon />
+                <FDiff/>
                 </button>
                 <button
                   type="button"
@@ -587,7 +587,7 @@ export default function App() {
                   aria-label="Toggle notes pane"
                   onClick={() => togglePaneVisibility("threads")}
                 >
-                  <NotesPaneIcon />
+                <NotebookPen/>
                 </button>
               </div>
               <div className="topbar-meta">
