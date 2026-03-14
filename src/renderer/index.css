@@ -147,6 +147,10 @@ textarea,
   min-height: 0;
 }
 
+.file-list-scroll {
+  overflow-x: hidden;
+}
+
 .sidebar-scroll {
   display: flex;
   flex-direction: column;
@@ -551,7 +555,9 @@ body.is-resizing .pane-resizer::before {
 
 .file-row {
   position: absolute;
-  inset-inline: 8px;
+  left: 8px;
+  right: 8px;
+  max-width: calc(100% - 16px);
   top: 0;
   display: flex;
   align-items: center;
@@ -580,8 +586,10 @@ body.is-resizing .pane-resizer::before {
 .file-row-main {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 4px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .file-row p {
