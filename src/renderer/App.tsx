@@ -1034,63 +1034,63 @@ export default function App() {
       <div className="app-shell" style={shellStyle}>
         <Sidebar>
           <SidebarHeader ref={sidebarHeaderRef}>
-          <div className="sidebar-title" ref={sidebarTitleRef}>
-            <div>
-              <h1 className="brand-title">
-                <span className="brand-code">Code</span> <span className="brand-watch">Watch</span>
-              </h1>
-              <p>{projects.length} repo{projects.length === 1 ? "" : "s"}</p>
+            <div className="sidebar-title" ref={sidebarTitleRef}>
+              <div>
+                <h1 className="brand-title">
+                  <span className="brand-code">Code</span> <span className="brand-watch">Watch</span>
+                </h1>
+                <p>{projects.length} repo{projects.length === 1 ? "" : "s"}</p>
+              </div>
             </div>
-          </div>
-          <button
-            ref={sidebarAddRepoButtonRef}
-            className="ghost-button"
-            onClick={() => void addProject()}
-            aria-label="Add repository"
-          >
-            <FolderInput style={{ paddingTop: "25%" }} />
-          </button>
+            <button
+              ref={sidebarAddRepoButtonRef}
+              className="ghost-button"
+              onClick={() => void addProject()}
+              aria-label="Add repository"
+            >
+              <FolderInput style={{ paddingTop: "25%" }} />
+            </button>
           </SidebarHeader>
 
           <SidebarContent className="sidebar-scroll">
-          {projects.length === 0 ? (
-            <EmptyState title="No repos" body="Add a local Git repo." actionLabel="+" onAction={() => void addProject()} />
-          ) : (
-            <PinList
-              items={projects}
-              itemKey={(p) => p.id}
-              isPinned={(p) => p.isPinned}
-              onTogglePin={(p) => void togglePinProject(p.id)}
-              labels={{ pinned: "Pinned", unpinned: "Repositories" }}
-              renderItem={(project) => {
-                const isActive = project.id === activeProjectId;
+            {projects.length === 0 ? (
+              <EmptyState title="No repos" body="Add a local Git repo." actionLabel="+" onAction={() => void addProject()} />
+            ) : (
+              <PinList
+                items={projects}
+                itemKey={(p) => p.id}
+                isPinned={(p) => p.isPinned}
+                onTogglePin={(p) => void togglePinProject(p.id)}
+                labels={{ pinned: "Pinned", unpinned: "Repositories" }}
+                renderItem={(project) => {
+                  const isActive = project.id === activeProjectId;
 
-                return (
-                  <button
-                    className={`project-button project-row ${isActive ? "project-row-active" : ""} ${draggedProjectId === project.id ? "project-row-dragging" : ""
-                      } ${dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
-                      }`}
-                    draggable
-                    onDragStart={(event) => beginProjectReorder(event, project.id)}
-                    onDragOver={(event) => handleProjectDragOver(event, project.id)}
-                    onDrop={(event) => handleProjectDrop(event, project.id)}
-                    onDragEnd={clearProjectDragState}
-                    onClick={() => {
-                      startTransition(() => {
-                        void selectProject(project.id);
-                      });
-                    }}
-                    onContextMenu={(event) => openProjectContextMenu(event, project.id)}
-                  >
-                    <div className="project-copy">
-                      <FolderIcon />
-                      <strong>{project.name}</strong>
-                    </div>
-                  </button>
-                );
-              }}
-            />
-          )}
+                  return (
+                    <button
+                      className={`project-button project-row ${isActive ? "project-row-active" : ""} ${draggedProjectId === project.id ? "project-row-dragging" : ""
+                        } ${dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
+                        }`}
+                      draggable
+                      onDragStart={(event) => beginProjectReorder(event, project.id)}
+                      onDragOver={(event) => handleProjectDragOver(event, project.id)}
+                      onDrop={(event) => handleProjectDrop(event, project.id)}
+                      onDragEnd={clearProjectDragState}
+                      onClick={() => {
+                        startTransition(() => {
+                          void selectProject(project.id);
+                        });
+                      }}
+                      onContextMenu={(event) => openProjectContextMenu(event, project.id)}
+                    >
+                      <div className="project-copy">
+                        <FolderIcon />
+                        <strong>{project.name}</strong>
+                      </div>
+                    </button>
+                  );
+                }}
+              />
+            )}
           </SidebarContent>
 
           {projectContextMenu ? (
@@ -1129,207 +1129,207 @@ export default function App() {
         />
 
         <main className="main-pane">
-        <header className="topbar">
-          <div className="topbar-title">
-            <h2>{activeSession ? activeSession.project.name : "Code Watch"}</h2>
-            <p>
-              {activeSession
-                ? `${activeSession.session.branchName} · ${shortSha(activeSession.session.headSha)}`
-                : "Local review"}
-            </p>
-          </div>
+          <header className="topbar">
+            <div className="topbar-title">
+              <h2>{activeSession ? activeSession.project.name : "Code Watch"}</h2>
+              <p>
+                {activeSession
+                  ? `${activeSession.session.branchName} · ${shortSha(activeSession.session.headSha)}`
+                  : "Local review"}
+              </p>
+            </div>
 
-          {activeSession && activeProject ? (
-            <div className="topbar-actions">
-              <div className="pane-toolbar" role="toolbar" aria-label="Toggle review panes">
-                <button
-                  type="button"
-                  className={`pane-toolbar-button ${reviewLayout.visibility.files ? "pane-toolbar-button-active" : ""}`}
-                  aria-pressed={reviewLayout.visibility.files}
-                  aria-label="Toggle files pane"
-                  onClick={() => togglePaneVisibility("files")}
-                >
-                  <Files />
-                </button>
-                <button
-                  type="button"
-                  className={`pane-toolbar-button ${reviewLayout.visibility.diff ? "pane-toolbar-button-active" : ""}`}
-                  aria-pressed={reviewLayout.visibility.diff}
-                  aria-label="Toggle diff pane"
-                  onClick={() => togglePaneVisibility("diff")}
-                >
-                  <FDiff />
-                </button>
-                <button
-                  type="button"
-                  className={`pane-toolbar-button ${reviewLayout.visibility.threads ? "pane-toolbar-button-active" : ""}`}
-                  aria-pressed={reviewLayout.visibility.threads}
-                  aria-label="Toggle notes pane"
-                  onClick={() => togglePaneVisibility("threads")}
-                >
-                  <NotebookPen />
-                </button>
-              </div>
-              <div className="topbar-meta">
-                <div className="base-branch-control" ref={baseBranchMenuRef}>
+            {activeSession && activeProject ? (
+              <div className="topbar-actions">
+                <div className="pane-toolbar" role="toolbar" aria-label="Toggle review panes">
                   <button
                     type="button"
-                    className="base-branch-trigger"
-                    aria-label="Base branch"
-                    aria-expanded={isBaseBranchMenuOpen}
-                    aria-haspopup="listbox"
-                    onClick={toggleBaseBranchMenu}
+                    className={`pane-toolbar-button ${reviewLayout.visibility.files ? "pane-toolbar-button-active" : ""}`}
+                    aria-pressed={reviewLayout.visibility.files}
+                    aria-label="Toggle files pane"
+                    onClick={() => togglePaneVisibility("files")}
                   >
-                    {activeProject.defaultBaseBranch}
+                    <Files />
                   </button>
-                  {isBaseBranchMenuOpen ? (
-                    <div
-                      className="base-branch-menu"
-                      role="listbox"
-                      aria-label="Branch list"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onPointerMove={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      onWheel={(event) => event.stopPropagation()}
+                  <button
+                    type="button"
+                    className={`pane-toolbar-button ${reviewLayout.visibility.diff ? "pane-toolbar-button-active" : ""}`}
+                    aria-pressed={reviewLayout.visibility.diff}
+                    aria-label="Toggle diff pane"
+                    onClick={() => togglePaneVisibility("diff")}
+                  >
+                    <FDiff />
+                  </button>
+                  <button
+                    type="button"
+                    className={`pane-toolbar-button ${reviewLayout.visibility.threads ? "pane-toolbar-button-active" : ""}`}
+                    aria-pressed={reviewLayout.visibility.threads}
+                    aria-label="Toggle notes pane"
+                    onClick={() => togglePaneVisibility("threads")}
+                  >
+                    <NotebookPen />
+                  </button>
+                </div>
+                <div className="topbar-meta">
+                  <div className="base-branch-control" ref={baseBranchMenuRef}>
+                    <button
+                      type="button"
+                      className="base-branch-trigger"
+                      aria-label="Base branch"
+                      aria-expanded={isBaseBranchMenuOpen}
+                      aria-haspopup="listbox"
+                      onClick={toggleBaseBranchMenu}
                     >
-                      {loadingBaseBranches ? (
-                        <p className="base-branch-menu-state">Loading branches...</p>
-                      ) : baseBranchOptions.length > 0 ? (
-                        baseBranchOptions.map((branch) => (
-                          <button
-                            key={branch}
-                            type="button"
-                            role="option"
-                            aria-selected={branch === activeProject.defaultBaseBranch}
-                            className={`base-branch-option ${branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
-                              }`}
-                            onClick={() => selectBaseBranch(branch)}
-                          >
-                            {branch}
-                          </button>
-                        ))
-                      ) : (
-                        <p className="base-branch-menu-state">No branches found.</p>
-                      )}
-                    </div>
+                      {activeProject.defaultBaseBranch}
+                    </button>
+                    {isBaseBranchMenuOpen ? (
+                      <div
+                        className="base-branch-menu"
+                        role="listbox"
+                        aria-label="Branch list"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onPointerMove={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onWheel={(event) => event.stopPropagation()}
+                      >
+                        {loadingBaseBranches ? (
+                          <p className="base-branch-menu-state">Loading branches...</p>
+                        ) : baseBranchOptions.length > 0 ? (
+                          baseBranchOptions.map((branch) => (
+                            <button
+                              key={branch}
+                              type="button"
+                              role="option"
+                              aria-selected={branch === activeProject.defaultBaseBranch}
+                              className={`base-branch-option ${branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
+                                }`}
+                              onClick={() => selectBaseBranch(branch)}
+                            >
+                              {branch}
+                            </button>
+                          ))
+                        ) : (
+                          <p className="base-branch-menu-state">No branches found.</p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
+                </div>
+              </div>
+            ) : null}
+          </header>
+
+          {initializing ? (
+            <LoadingState label="Loading" />
+          ) : activeSession ? (
+            <div ref={reviewLayoutRef} className="review-layout">
+              {visibleReviewPanes.map((paneId, index) => (
+                <div
+                  key={paneId}
+                  className="review-pane-slot"
+                  style={{ flexBasis: `${normalizedPaneSizes[paneId]}%` } satisfies CSSProperties}
+                >
+                  {renderReviewPane(paneId)}
+                  {index < visibleReviewPanes.length - 1 ? (
+                    <div
+                      className="pane-resizer"
+                      role="separator"
+                      aria-label={`Resize ${paneLabels[paneId]} and ${paneLabels[visibleReviewPanes[index + 1]!]}`}
+                      aria-orientation="vertical"
+                      onPointerDown={(event) => beginPaneResize(event, paneId, visibleReviewPanes[index + 1]!)}
+                    />
                   ) : null}
                 </div>
-                {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
-              </div>
+              ))}
             </div>
-          ) : null}
-        </header>
-
-        {initializing ? (
-          <LoadingState label="Loading" />
-        ) : activeSession ? (
-          <div ref={reviewLayoutRef} className="review-layout">
-            {visibleReviewPanes.map((paneId, index) => (
-              <div
-                key={paneId}
-                className="review-pane-slot"
-                style={{ flexBasis: `${normalizedPaneSizes[paneId]}%` } satisfies CSSProperties}
-              >
-                {renderReviewPane(paneId)}
-                {index < visibleReviewPanes.length - 1 ? (
-                  <div
-                    className="pane-resizer"
-                    role="separator"
-                    aria-label={`Resize ${paneLabels[paneId]} and ${paneLabels[visibleReviewPanes[index + 1]!]}`}
-                    aria-orientation="vertical"
-                    onPointerDown={(event) => beginPaneResize(event, paneId, visibleReviewPanes[index + 1]!)}
-                  />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="+" onAction={() => void addProject()} />
-        )}
+          ) : (
+            <EmptyState title="Add a repo" body="Open a local Git repo to start." actionLabel="+" onAction={() => void addProject()} />
+          )}
         </main>
 
         <CommandPaletteDialog
-        open={isCommandMenuOpen}
-        label={commandMenuView.type === "root" ? "Command menu" : "Switch review branch"}
-        value={commandMenuQuery}
-        placeholder={commandMenuView.type === "root" ? "Search commands" : "Search branches"}
-        inputRef={commandMenuInputRef}
-        selectedItemId={visibleCommandMenuItems[commandMenuSelectedIndex]?.id ?? null}
-        onClose={closeCommandMenu}
-        onValueChange={(value) => {
-          setCommandMenuQuery(value);
-          setCommandMenuSelectedIndex(0);
-        }}
-      >
-        {visibleCommandMenuItems.length === 0 ? (
-          <p className="command-palette-state">
-            {commandMenuView.type === "root"
-              ? "No matching commands."
-              : !branchPickerProject
-                ? "No project selected."
-                : loadingBaseBranches
-                  ? `Loading branches for ${branchPickerProject.name}...`
-                  : branchPickerBranches.length === 0
-                    ? `No branches found for ${branchPickerProject.name}.`
-                    : "No matching branches."
-            }
-          </p>
-        ) : (
-          visibleCommandMenuItems.map((command, index) => (
-            <button
-              key={command.id}
-              className={`command-palette-item ${index === commandMenuSelectedIndex ? "command-palette-item-active" : ""}`}
-              data-command-palette-selected={index === commandMenuSelectedIndex ? "true" : undefined}
-              onMouseEnter={() => setCommandMenuSelectedIndex(index)}
-              onClick={() => command.execute()}
-            >
-              <div className="command-palette-item-main">
-                <strong>{command.title}</strong>
-                <p>{command.subtitle}</p>
-              </div>
-            </button>
-          ))
-        )}
+          open={isCommandMenuOpen}
+          label={commandMenuView.type === "root" ? "Command menu" : "Switch review branch"}
+          value={commandMenuQuery}
+          placeholder={commandMenuView.type === "root" ? "Search commands" : "Search branches"}
+          inputRef={commandMenuInputRef}
+          selectedItemId={visibleCommandMenuItems[commandMenuSelectedIndex]?.id ?? null}
+          onClose={closeCommandMenu}
+          onValueChange={(value) => {
+            setCommandMenuQuery(value);
+            setCommandMenuSelectedIndex(0);
+          }}
+        >
+          {visibleCommandMenuItems.length === 0 ? (
+            <p className="command-palette-state">
+              {commandMenuView.type === "root"
+                ? "No matching commands."
+                : !branchPickerProject
+                  ? "No project selected."
+                  : loadingBaseBranches
+                    ? `Loading branches for ${branchPickerProject.name}...`
+                    : branchPickerBranches.length === 0
+                      ? `No branches found for ${branchPickerProject.name}.`
+                      : "No matching branches."
+              }
+            </p>
+          ) : (
+            visibleCommandMenuItems.map((command, index) => (
+              <button
+                key={command.id}
+                className={`command-palette-item ${index === commandMenuSelectedIndex ? "command-palette-item-active" : ""}`}
+                data-command-palette-selected={index === commandMenuSelectedIndex ? "true" : undefined}
+                onMouseEnter={() => setCommandMenuSelectedIndex(index)}
+                onClick={() => command.execute()}
+              >
+                <div className="command-palette-item-main">
+                  <strong>{command.title}</strong>
+                  <p>{command.subtitle}</p>
+                </div>
+              </button>
+            ))
+          )}
         </CommandPaletteDialog>
 
         <CommandPaletteDialog
-        open={isFileSearchOpen}
-        label="Search files"
-        value={fileSearchQuery}
-        placeholder="Search files across projects"
-        inputRef={fileSearchInputRef}
-        selectedItemId={fileSearchResults[fileSearchSelectedIndex]
-          ? `${fileSearchResults[fileSearchSelectedIndex]!.projectId}:${fileSearchResults[fileSearchSelectedIndex]!.sessionId}:${fileSearchResults[fileSearchSelectedIndex]!.filePath}`
-          : null}
-        onClose={closeFileSearch}
-        onValueChange={(value) => {
-          setFileSearchQuery(value);
-          setFileSearchSelectedIndex(0);
-        }}
-      >
-        {fileSearchLoading && fileSearchResults.length === 0 ? (
-          <p className="command-palette-state">Searching...</p>
-        ) : fileSearchResults.length === 0 ? (
-          <p className="command-palette-state">No matching files.</p>
-        ) : (
-          fileSearchResults.map((result, index) => (
-            <button
-              key={`${result.projectId}:${result.sessionId}:${result.filePath}`}
-              className={`command-palette-item ${index === fileSearchSelectedIndex ? "command-palette-item-active" : ""}`}
-              data-command-palette-selected={index === fileSearchSelectedIndex ? "true" : undefined}
-              onMouseEnter={() => setFileSearchSelectedIndex(index)}
-              onClick={() => {
-                void applyFileSearchResult(result);
-              }}
-            >
-              <div className="command-palette-item-main">
-                <strong>{result.filePath}</strong>
-                <p>{result.projectName}</p>
-              </div>
-            </button>
-          ))
-        )}
+          open={isFileSearchOpen}
+          label="Search files"
+          value={fileSearchQuery}
+          placeholder="Search files across projects"
+          inputRef={fileSearchInputRef}
+          selectedItemId={fileSearchResults[fileSearchSelectedIndex]
+            ? `${fileSearchResults[fileSearchSelectedIndex]!.projectId}:${fileSearchResults[fileSearchSelectedIndex]!.sessionId}:${fileSearchResults[fileSearchSelectedIndex]!.filePath}`
+            : null}
+          onClose={closeFileSearch}
+          onValueChange={(value) => {
+            setFileSearchQuery(value);
+            setFileSearchSelectedIndex(0);
+          }}
+        >
+          {fileSearchLoading && fileSearchResults.length === 0 ? (
+            <p className="command-palette-state">Searching...</p>
+          ) : fileSearchResults.length === 0 ? (
+            <p className="command-palette-state">No matching files.</p>
+          ) : (
+            fileSearchResults.map((result, index) => (
+              <button
+                key={`${result.projectId}:${result.sessionId}:${result.filePath}`}
+                className={`command-palette-item ${index === fileSearchSelectedIndex ? "command-palette-item-active" : ""}`}
+                data-command-palette-selected={index === fileSearchSelectedIndex ? "true" : undefined}
+                onMouseEnter={() => setFileSearchSelectedIndex(index)}
+                onClick={() => {
+                  void applyFileSearchResult(result);
+                }}
+              >
+                <div className="command-palette-item-main">
+                  <strong>{result.filePath}</strong>
+                  <p>{result.projectName}</p>
+                </div>
+              </button>
+            ))
+          )}
         </CommandPaletteDialog>
 
         {error ? (
@@ -1383,7 +1383,7 @@ function DiffViewer({
         </div>
       ) : null}
       <div ref={parentRef} className="virtual-scroll diff-scroll">
-        <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", marginLeft: "-10px", marginRight: "10px" }}>
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const row = rows[virtualRow.index];
             if (!row) {
