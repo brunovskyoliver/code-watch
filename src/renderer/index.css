@@ -1016,7 +1016,6 @@ h4 {
   background: transparent;
 }
 
-.command-palette-item:hover,
 .command-palette-item-active {
   background: rgba(255, 255, 255, 0.08);
 }
