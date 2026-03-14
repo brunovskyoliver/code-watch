@@ -86,6 +86,7 @@ export default function App() {
     error,
     initialize,
     addProject,
+    reorderProjects,
     removeProject,
     selectProject,
     refreshProject,
@@ -118,6 +119,8 @@ export default function App() {
     y: number;
     projectId: string;
   } | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [dropTargetProjectId, setDropTargetProjectId] = useState<string | null>(null);
   const [isCommandMenuOpen, setCommandMenuOpen] = useState(false);
   const [commandMenuView, setCommandMenuView] = useState<CommandMenuView>({ type: "root" });
   const [commandMenuQuery, setCommandMenuQuery] = useState("");
@@ -717,6 +720,51 @@ export default function App() {
     setProjectContextMenu(null);
   };
 
+  const clearProjectDragState = () => {
+    document.body.classList.remove("is-pane-dragging");
+    setDraggedProjectId(null);
+    setDropTargetProjectId(null);
+  };
+
+  const beginProjectReorder = (event: ReactDragEvent<HTMLButtonElement>, projectId: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", projectId);
+    document.body.classList.add("is-pane-dragging");
+    setDraggedProjectId(projectId);
+    setDropTargetProjectId(projectId);
+  };
+
+  const handleProjectDragOver = (event: ReactDragEvent<HTMLButtonElement>, projectId: string) => {
+    if (!draggedProjectId || draggedProjectId === projectId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dropTargetProjectId !== projectId) {
+      setDropTargetProjectId(projectId);
+    }
+  };
+
+  const handleProjectDrop = (event: ReactDragEvent<HTMLButtonElement>, projectId: string) => {
+    if (!draggedProjectId) {
+      return;
+    }
+
+    event.preventDefault();
+    if (draggedProjectId !== projectId) {
+      const reorderedProjectIds = reorderIdList(
+        projects.map((project) => project.id),
+        draggedProjectId,
+        projectId
+      );
+      if (reorderedProjectIds.length > 0) {
+        void reorderProjects(reorderedProjectIds);
+      }
+    }
+    clearProjectDragState();
+  };
+
   const togglePaneVisibility = (paneId: ReviewPaneId) => {
     setReviewLayout((previous) => setReviewPaneVisibility(previous, paneId, !previous.visibility[paneId]));
   };
@@ -890,7 +938,16 @@ export default function App() {
               return (
                 <button
                   key={project.id}
-                  className={`project-button project-row ${isActive ? "project-row-active" : ""}`}
+                  className={`project-button project-row ${isActive ? "project-row-active" : ""} ${
+                    draggedProjectId === project.id ? "project-row-dragging" : ""
+                  } ${
+                    dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
+                  }`}
+                  draggable
+                  onDragStart={(event) => beginProjectReorder(event, project.id)}
+                  onDragOver={(event) => handleProjectDragOver(event, project.id)}
+                  onDrop={(event) => handleProjectDrop(event, project.id)}
+                  onDragEnd={clearProjectDragState}
                   onClick={() => {
                     startTransition(() => {
                       void selectProject(project.id);
@@ -1388,4 +1445,21 @@ function getPaneMinimumWidth(paneId: ReviewPaneId): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function reorderIdList(ids: string[], sourceId: string, targetId: string): string[] {
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(targetId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return [];
+  }
+
+  const next = [...ids];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) {
+    return [];
+  }
+
+  next.splice(targetIndex, 0, moved);
+  return next;
 }

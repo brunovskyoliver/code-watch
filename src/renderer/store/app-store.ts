@@ -32,6 +32,7 @@ interface AppState {
   error: string | null;
   initialize: () => Promise<void>;
   addProject: () => Promise<void>;
+  reorderProjects: (projectIds: string[]) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
   refreshProject: (projectId: string) => Promise<void>;
@@ -89,11 +90,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       const project = await window.codeWatch.projects.add(path);
       set((state) => ({
-        projects: [project, ...state.projects.filter((entry) => entry.id !== project.id)],
+        projects: [...state.projects.filter((entry) => entry.id !== project.id), project],
         activeProjectId: project.id,
         error: null
       }));
       await get().selectProject(project.id);
+    } catch (error) {
+      set({ error: toErrorMessage(error) });
+    }
+  },
+  reorderProjects: async (projectIds) => {
+    try {
+      const projects = await window.codeWatch.projects.reorder(projectIds);
+      set({ projects, error: null });
     } catch (error) {
       set({ error: toErrorMessage(error) });
     }

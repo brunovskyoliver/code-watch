@@ -18,6 +18,7 @@ function makeProject(headSha: string): ProjectSummary {
     name: "demo",
     repoPath: "/tmp/demo",
     defaultBaseBranch: "main",
+    sortOrder: 1,
     createdAt: 1,
     lastOpenedAt: 1,
     currentBranch: "feature/demo",
@@ -103,6 +104,7 @@ describe("app-store", () => {
         pickDirectory: vi.fn(async () => null),
         add: vi.fn(),
         list: vi.fn(async () => [makeProject("head_live")]),
+        reorder: vi.fn(async () => [makeProject("head_live")]),
         remove: vi.fn(async () => undefined),
         listBranches: vi.fn(async () => ["main", "origin/main"]),
         updateBaseBranch: vi.fn(async () => makeProject("head_live"))

@@ -238,6 +238,7 @@ export class ReviewService {
       name: project.name,
       repoPath: project.repoPath,
       defaultBaseBranch: project.defaultBaseBranch,
+      sortOrder: project.sortOrder,
       createdAt: project.createdAt,
       lastOpenedAt: project.lastOpenedAt,
       currentBranch: state?.currentBranch ?? null,

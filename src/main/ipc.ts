@@ -24,6 +24,10 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("projects:list", async () => services.projects.list());
 
+  ipcMain.handle("projects:reorder", async (_event, projectIds: string[]) =>
+    services.projects.reorder(z.array(z.string().min(1)).parse(projectIds))
+  );
+
   ipcMain.handle("projects:add", async (_event, repoPath: string) => {
     const project = await services.projects.add(z.string().min(1).parse(repoPath));
     await services.watchers.watchProject(project.id, project.repoPath);
