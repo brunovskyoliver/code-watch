@@ -20,6 +20,7 @@ interface AppState {
   activeSession: ReviewSessionDetail | null;
   files: ChangedFile[];
   selectedFilePath: string | null;
+  openFiles: string[];
   diffsByFile: Record<string, FileDiff>;
   threadPreviewsByFile: Record<string, ThreadPreview[]>;
   activeThread: PaginatedComments | null;
@@ -38,6 +39,8 @@ interface AppState {
   refreshProject: (projectId: string) => Promise<void>;
   selectSession: (projectId: string, sessionId: string) => Promise<void>;
   selectFile: (filePath: string) => Promise<void>;
+  closeFile: (filePath: string) => Promise<void>;
+  reorderOpenFiles: (openFiles: string[]) => void;
   listBranches: (projectId: string) => Promise<string[]>;
   updateBaseBranch: (projectId: string, baseBranch: string) => Promise<void>;
   searchFiles: (query: string, limit?: number) => Promise<FileSearchResult[]>;
@@ -60,6 +63,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeSession: null,
   files: [],
   selectedFilePath: null,
+  openFiles: [],
   diffsByFile: {},
   threadPreviewsByFile: {},
   activeThread: null,
@@ -119,6 +123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeSession: state.activeProjectId === projectId ? null : state.activeSession,
           files: state.activeProjectId === projectId ? [] : state.files,
           selectedFilePath: state.activeProjectId === projectId ? null : state.selectedFilePath,
+          openFiles: state.activeProjectId === projectId ? [] : state.openFiles,
           diffsByFile: state.activeProjectId === projectId ? {} : state.diffsByFile,
           threadPreviewsByFile: state.activeProjectId === projectId ? {} : state.threadPreviewsByFile,
           activeThread: state.activeProjectId === projectId ? null : state.activeThread,
@@ -196,20 +201,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       ]);
 
       const selectedFilePath = resolveSelectedFilePath(files, preferredFilePath);
-      set((state) => ({
-        loadingReview: false,
-        activeSession: detail,
-        files,
-        selectedFilePath,
-        sessionsByProject: {
-          ...state.sessionsByProject,
-          [projectId]: sessions
-        },
-        diffsByFile: {},
-        threadPreviewsByFile: {},
-        activeThread: null,
-        activeThreadPreview: null
-      }));
+      set((state) => {
+        const isSameSession = state.activeSession?.session.id === sessionId;
+        const validPaths = new Set(files.map(f => f.filePath));
+        let nextOpenFiles = isSameSession ? state.openFiles.filter(f => validPaths.has(f)) : [];
+        if (selectedFilePath && !nextOpenFiles.includes(selectedFilePath)) {
+          nextOpenFiles.push(selectedFilePath);
+        }
+
+        return {
+          loadingReview: false,
+          activeSession: detail,
+          files,
+          selectedFilePath,
+          openFiles: nextOpenFiles,
+          sessionsByProject: {
+            ...state.sessionsByProject,
+            [projectId]: sessions
+          },
+          diffsByFile: {},
+          threadPreviewsByFile: {},
+          activeThread: null,
+          activeThreadPreview: null
+        };
+      });
 
       if (selectedFilePath) {
         await get().selectFile(selectedFilePath);
@@ -224,14 +239,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    set({
+    set((state) => ({
       selectedFilePath: filePath,
+      openFiles: state.openFiles.includes(filePath) ? state.openFiles : [...state.openFiles, filePath],
       loadingDiff: true,
       loadingThread: true,
       activeThread: null,
       activeThreadPreview: null,
       composerAnchor: null
-    });
+    }));
 
     try {
       const [diff, threadPreviews] = await Promise.all([
@@ -253,6 +269,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
     } catch (error) {
       set({ loadingDiff: false, loadingThread: false, error: toErrorMessage(error) });
+    }
+  },
+  reorderOpenFiles: (openFiles) => {
+    set({ openFiles });
+  },
+  closeFile: async (filePath) => {
+    const state = get();
+    const nextOpenFiles = state.openFiles.filter(f => f !== filePath);
+    let nextSelectedFilePath = state.selectedFilePath;
+    if (nextSelectedFilePath === filePath) {
+      const index = state.openFiles.indexOf(filePath);
+      if (index > 0) {
+        nextSelectedFilePath = state.openFiles[index - 1] ?? null;
+      } else if (nextOpenFiles.length > 0) {
+        nextSelectedFilePath = nextOpenFiles[0] ?? null;
+      } else {
+        nextSelectedFilePath = null;
+      }
+    }
+    set({ openFiles: nextOpenFiles });
+    if (nextSelectedFilePath && nextSelectedFilePath !== state.selectedFilePath) {
+      void get().selectFile(nextSelectedFilePath);
+    } else if (!nextSelectedFilePath && state.selectedFilePath) {
+      set({ selectedFilePath: null, activeThread: null, activeThreadPreview: null, composerAnchor: null });
     }
   },
   listBranches: async (projectId) => {
@@ -440,21 +480,31 @@ async function hydrateReview(
   const files = await window.codeWatch.reviews.files(sessionId);
   const selectedFilePath = resolveSelectedFilePath(files, get().selectedFilePath);
 
-  set((state) => ({
-    loadingReview: false,
-    activeSession: openResult.detail,
-    files,
-    selectedFilePath,
-    sessionsByProject: {
-      ...state.sessionsByProject,
-      [openResult.detail.project.id]: sessions
-    },
-    diffsByFile: {},
-    threadPreviewsByFile: {},
-    activeThread: null,
-    activeThreadPreview: null,
-    composerAnchor: null
-  }));
+  set((state) => {
+    const isSameSession = state.activeSession?.session.id === sessionId;
+    const validPaths = new Set(files.map(f => f.filePath));
+    let nextOpenFiles = isSameSession ? state.openFiles.filter(f => validPaths.has(f)) : [];
+    if (selectedFilePath && !nextOpenFiles.includes(selectedFilePath)) {
+      nextOpenFiles.push(selectedFilePath);
+    }
+
+    return {
+      loadingReview: false,
+      activeSession: openResult.detail,
+      files,
+      selectedFilePath,
+      openFiles: nextOpenFiles,
+      sessionsByProject: {
+        ...state.sessionsByProject,
+        [openResult.detail.project.id]: sessions
+      },
+      diffsByFile: {},
+      threadPreviewsByFile: {},
+      activeThread: null,
+      activeThreadPreview: null,
+      composerAnchor: null
+    };
+  });
 
   if (selectedFilePath) {
     await get().selectFile(selectedFilePath);
