@@ -52,7 +52,9 @@ export class ReviewService {
         (session) =>
           session.branchName === repoState.currentBranch &&
           session.baseBranch === baseBranch &&
-          session.headSha === repoState.headSha
+          session.headSha === repoState.headSha &&
+          session.baseSha === baseSha &&
+          session.mergeBaseSha === mergeBaseSha
       ) ?? null;
 
     if (matchingExisting) {
@@ -184,7 +186,9 @@ export class ReviewService {
       isBinary: file.isBinary
     }));
 
-    return [...workingTreeFiles, ...committedFiles];
+    const workingTreePaths = new Set(workingTreeFiles.map((file) => file.filePath));
+
+    return [...workingTreeFiles, ...committedFiles.filter((file) => !workingTreePaths.has(file.filePath))];
   }
 
   async diff(sessionId: string, filePath: string, source: ChangedFile["source"] = "committed"): Promise<FileDiff> {
@@ -284,7 +288,8 @@ export class ReviewService {
       lastOpenedAt: project.lastOpenedAt,
       currentBranch: state?.currentBranch ?? null,
       headSha: state?.headSha ?? null,
-      dirty: state?.dirty ?? false
+      dirty: state?.dirty ?? false,
+      aheadCount: state?.aheadCount ?? 0
     };
   }
 }

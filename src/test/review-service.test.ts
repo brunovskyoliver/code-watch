@@ -113,13 +113,15 @@ function createGitMock() {
       rootPath: "/tmp/demo",
       currentBranch: "feature/demo",
       headSha,
-      dirty: false
+      dirty: false,
+      aheadCount: 0
     })),
     safeGetRepoState: vi.fn(async () => ({
       rootPath: "/tmp/demo",
       currentBranch: "feature/demo",
       headSha,
-      dirty: false
+      dirty: false,
+      aheadCount: 0
     })),
     getCommitSha: vi.fn(async () => "base_sha"),
     getMergeBase: vi.fn(async () => "merge_sha"),
@@ -182,5 +184,54 @@ describe("ReviewService", () => {
     const nextSession = await service.open("project_1");
     await service.diff(nextSession.detail.session.id, "src/app.ts");
     expect(git.getFileDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it("creates a new session when the base SHA changes even if HEAD stays the same", async () => {
+    const db = createFakeDb();
+    const { git } = createGitMock();
+    const dispatch = vi.fn();
+    let baseSha = "base_sha_a";
+    let mergeBaseSha = "merge_sha_a";
+
+    vi.mocked(git.getCommitSha).mockImplementation(async () => baseSha);
+    vi.mocked(git.getMergeBase).mockImplementation(async () => mergeBaseSha);
+
+    const service = new ReviewService(db as never, git, dispatch);
+    const first = await service.open("project_1");
+
+    baseSha = "base_sha_b";
+    mergeBaseSha = "merge_sha_b";
+
+    const second = await service.open("project_1");
+    expect(second.created).toBe(true);
+    expect(second.detail.session.id).not.toBe(first.detail.session.id);
+  });
+
+  it("hides committed entries when the same file exists in the working tree", async () => {
+    const db = createFakeDb();
+    const { git } = createGitMock();
+    const dispatch = vi.fn();
+    vi.mocked(git.getWorkingTreeChangedFiles).mockResolvedValue([
+      {
+        id: "working-tree:session_1:src/app.ts",
+        sessionId: "session_1",
+        source: "working-tree",
+        filePath: "src/app.ts",
+        oldPath: "src/app.ts",
+        newPath: "src/app.ts",
+        status: "modified",
+        additions: 1,
+        deletions: 0,
+        isBinary: false
+      }
+    ]);
+
+    const service = new ReviewService(db as never, git, dispatch);
+    const openResult = await service.open("project_1");
+    const files = await service.files(openResult.detail.session.id);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.source).toBe("working-tree");
+    expect(files[0]?.filePath).toBe("src/app.ts");
   });
 });
