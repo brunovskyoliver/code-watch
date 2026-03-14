@@ -326,7 +326,23 @@ export class GitService {
       return;
     }
 
-    await this.runGit(rootPath, ["add", "--all", "--", ...uniquePaths]);
+    const existingPaths = await Promise.all(uniquePaths.map(async (filePath) => {
+      const absolutePath = path.join(rootPath, filePath);
+      const exists = await fs.access(absolutePath).then(() => true).catch(() => false);
+      if (exists) {
+        return filePath;
+      }
+
+      const tracked = await this.isTrackedPath(rootPath, filePath);
+      return tracked ? filePath : null;
+    }));
+
+    const stageablePaths = existingPaths.filter((filePath): filePath is string => filePath !== null);
+    if (stageablePaths.length === 0) {
+      return;
+    }
+
+    await this.runGit(rootPath, ["add", "--all", "--", ...stageablePaths]);
   }
 
   async commit(repoPath: string, title: string, body: string): Promise<void> {
@@ -370,6 +386,15 @@ export class GitService {
       } catch {
         return false;
       }
+    }
+  }
+
+  private async isTrackedPath(repoPath: string, filePath: string): Promise<boolean> {
+    try {
+      await this.runGit(repoPath, ["ls-files", "--error-unmatch", "--", filePath]);
+      return true;
+    } catch {
+      return false;
     }
   }
 
