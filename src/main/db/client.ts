@@ -16,6 +16,7 @@ function runMigrations(sqlite: Database.Database): void {
       name TEXT NOT NULL,
       repo_path TEXT NOT NULL UNIQUE,
       default_base_branch TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       last_opened_at INTEGER NOT NULL
     );
@@ -67,6 +68,25 @@ function runMigrations(sqlite: Database.Database): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+  `);
+
+  const hasSortOrder = sqlite
+    .prepare("SELECT 1 FROM pragma_table_info('projects') WHERE name = 'sort_order' LIMIT 1")
+    .get();
+
+  if (!hasSortOrder) {
+    sqlite.exec("ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;");
+  }
+
+  sqlite.exec(`
+    UPDATE projects
+    SET sort_order = ranked.row_num
+    FROM (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY last_opened_at DESC, created_at DESC, id ASC) AS row_num
+      FROM projects
+    ) AS ranked
+    WHERE projects.id = ranked.id
+      AND IFNULL(projects.sort_order, 0) = 0;
   `);
 }
 

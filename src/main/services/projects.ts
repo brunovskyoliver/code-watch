@@ -1,5 +1,5 @@
 import path from "node:path";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { dialog } from "electron";
 import type { AppDatabase } from "@main/db/client";
 import { projectsTable } from "@main/db/schema";
@@ -23,7 +23,7 @@ export class ProjectService {
   }
 
   async list(): Promise<ProjectSummary[]> {
-    const projects = await this.db.select().from(projectsTable).orderBy(desc(projectsTable.lastOpenedAt));
+    const projects = await this.db.select().from(projectsTable).orderBy(asc(projectsTable.sortOrder));
 
     const states = await Promise.all(projects.map(async (project) => ({
       projectId: project.id,
@@ -37,6 +37,7 @@ export class ProjectService {
         name: project.name,
         repoPath: project.repoPath,
         defaultBaseBranch: project.defaultBaseBranch,
+        sortOrder: project.sortOrder,
         createdAt: project.createdAt,
         lastOpenedAt: project.lastOpenedAt,
         currentBranch: state?.currentBranch ?? null,
@@ -72,17 +73,54 @@ export class ProjectService {
     const projectId = createId("project");
     const timestamp = now();
     const defaultBaseBranch = await this.git.detectBaseBranch(rootPath);
+    const currentTail = await this.db
+      .select({ sortOrder: projectsTable.sortOrder })
+      .from(projectsTable)
+      .orderBy(desc(projectsTable.sortOrder))
+      .limit(1);
+    const nextSortOrder = (currentTail[0]?.sortOrder ?? 0) + 1;
 
     this.db.insert(projectsTable).values({
       id: projectId,
       name: path.basename(rootPath),
       repoPath: rootPath,
       defaultBaseBranch,
+      sortOrder: nextSortOrder,
       createdAt: timestamp,
       lastOpenedAt: timestamp
     }).run();
 
     return this.toSummary(await this.getById(projectId));
+  }
+
+  async reorder(projectIds: string[]): Promise<ProjectSummary[]> {
+    const projects = await this.db.select().from(projectsTable);
+    if (projectIds.length !== projects.length) {
+      throw new Error("Project order update must include every project.");
+    }
+
+    const projectIdSet = new Set(projects.map((project) => project.id));
+    if (projectIdSet.size !== projectIds.length) {
+      throw new Error("Project order contains duplicate entries.");
+    }
+
+    for (const projectId of projectIds) {
+      if (!projectIdSet.has(projectId)) {
+        throw new Error("Project order contains unknown project IDs.");
+      }
+    }
+
+    this.db.transaction((tx) => {
+      for (const [index, projectId] of projectIds.entries()) {
+        tx
+          .update(projectsTable)
+          .set({ sortOrder: index + 1 })
+          .where(eq(projectsTable.id, projectId))
+          .run();
+      }
+    });
+
+    return this.list();
   }
 
   async remove(projectId: string): Promise<void> {
@@ -121,6 +159,7 @@ export class ProjectService {
       name: project.name,
       repoPath: project.repoPath,
       defaultBaseBranch: project.defaultBaseBranch,
+      sortOrder: project.sortOrder,
       createdAt: project.createdAt,
       lastOpenedAt: project.lastOpenedAt,
       currentBranch: state?.currentBranch ?? null,

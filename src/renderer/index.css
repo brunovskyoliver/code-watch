@@ -183,6 +183,16 @@ textarea,
   border-color: rgba(255, 255, 255, 0.08);
 }
 
+.project-row-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.project-row-drop-target {
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 .project-card:hover,
 .project-card-active {
   background: rgba(255, 255, 255, 0.045);

@@ -37,6 +37,7 @@ export const projectSummarySchema = z.object({
   name: z.string(),
   repoPath: z.string(),
   defaultBaseBranch: z.string(),
+  sortOrder: z.number().int(),
   createdAt: z.number().int(),
   lastOpenedAt: z.number().int(),
   currentBranch: z.string().nullable(),
@@ -177,6 +178,7 @@ export interface CodeWatchApi {
     pickDirectory: () => Promise<string | null>;
     add: (repoPath: string) => Promise<ProjectSummary>;
     list: () => Promise<ProjectSummary[]>;
+    reorder: (projectIds: string[]) => Promise<ProjectSummary[]>;
     remove: (projectId: string) => Promise<void>;
     listBranches: (projectId: string) => Promise<string[]>;
     updateBaseBranch: (projectId: string, baseBranch: string) => Promise<ProjectSummary>;

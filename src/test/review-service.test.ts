@@ -10,6 +10,7 @@ function createFakeDb() {
       name: "demo",
       repoPath: "/tmp/demo",
       defaultBaseBranch: "main",
+      sortOrder: 1,
       createdAt: 1,
       lastOpenedAt: 1
     }
