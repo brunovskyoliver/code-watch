@@ -78,6 +78,7 @@ import { matchesKeybinding } from "@renderer/keybindings";
 import { useAppStore } from "@renderer/store/app-store";
 import { DEFAULT_KEYBINDINGS, type Keybinding } from "@shared/keybindings";
 import type {
+  AssistantProvider,
   CodexStatus,
   DiffLine,
   FileDiff,
@@ -132,8 +133,7 @@ const SETTINGS_MENU_LABEL = "Settings";
 const PROVIDER_TITLE = "Provider";
 const NO_SUPPORTED_EDITOR_ERROR = "No supported editor found. Install Visual Studio Code or Cursor.";
 const CODEX_NOT_AVAILABLE_ERROR = "Codex CLI is unavailable. Install Codex CLI and confirm `codex app-server` works in your terminal.";
-
-type AssistantProvider = "codex" | "opencode";
+const OPENCODE_NOT_AVAILABLE_ERROR = "OpenCode CLI is unavailable. Install OpenCode CLI and confirm `opencode app-server` works in your terminal.";
 
 const keybindingShortcutFallbacks: Record<string, string> = {
   "command-menu.open": "mod+/",
@@ -237,6 +237,7 @@ export default function App() {
   const [isUnsupportedEditorDialogOpen, setUnsupportedEditorDialogOpen] = useState(false);
   const [gitActionsMenuWidth, setGitActionsMenuWidth] = useState(180);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const [opencodeStatus, setOpencodeStatus] = useState<CodexStatus | null>(null);
   const [assistantProvider, setAssistantProvider] = useState<AssistantProvider>("codex");
   const [gitActionLoading, setGitActionLoading] = useState<GitDraftAction | GitRunAction | null>(null);
   const [draftResult, setDraftResult] = useState<GitDraftResult | null>(null);
@@ -256,6 +257,12 @@ export default function App() {
   const activeDiff = deferredFileId ? diffsByFile[deferredFileId] ?? null : null;
   const activeThreadPreviews = selectedFileId ? threadPreviewsByFile[selectedFileId] ?? [] : [];
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const activeAssistantStatus = assistantProvider === "opencode" ? opencodeStatus : codexStatus;
+  const activeAssistantLabel = assistantProvider === "opencode" ? "OpenCode" : "Codex";
+  const activeAssistantUnavailableMessage = assistantProvider === "opencode" ? OPENCODE_NOT_AVAILABLE_ERROR : CODEX_NOT_AVAILABLE_ERROR;
+  const activeAssistantVersionLabel = assistantProvider === "opencode"
+    ? (opencodeStatus?.version ? `OpenCode ${opencodeStatus.version}` : "OpenCode CLI")
+    : (codexStatus?.version ? `Codex ${codexStatus.version}` : "Codex CLI");
   const hasUncommittedChanges = activeSession?.dirty ?? false;
   const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : "Push";
   const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];
@@ -414,6 +421,29 @@ export default function App() {
             available: false,
             version: null,
             reason: error instanceof Error ? error.message : CODEX_NOT_AVAILABLE_ERROR
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.codeWatch.assistants.opencodeStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setOpencodeStatus(status);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOpencodeStatus({
+            available: false,
+            version: null,
+            reason: error instanceof Error ? error.message : OPENCODE_NOT_AVAILABLE_ERROR
           });
         }
       });
@@ -890,14 +920,14 @@ export default function App() {
       return;
     }
 
-    if (!codexStatus?.available) {
-      setUiError(new Error(codexStatus?.reason ?? CODEX_NOT_AVAILABLE_ERROR), CODEX_NOT_AVAILABLE_ERROR);
+    if (!activeAssistantStatus?.available) {
+      setUiError(new Error(activeAssistantStatus?.reason ?? activeAssistantUnavailableMessage), activeAssistantUnavailableMessage);
       return;
     }
 
     setGitActionLoading(action);
     try {
-      const result = await window.codeWatch.assistants.runGitAction(activeSession.session.id, action);
+      const result = await window.codeWatch.assistants.runGitActionWithProvider(activeSession.session.id, assistantProvider, action);
       setDraftDialogOpen(false);
       setDraftResult(null);
       setUiToastMessage(result.summary);
@@ -914,19 +944,19 @@ export default function App() {
       return;
     }
 
-    if (!codexStatus?.available) {
-      setUiError(new Error(codexStatus?.reason ?? CODEX_NOT_AVAILABLE_ERROR), CODEX_NOT_AVAILABLE_ERROR);
+    if (!activeAssistantStatus?.available) {
+      setUiError(new Error(activeAssistantStatus?.reason ?? activeAssistantUnavailableMessage), activeAssistantUnavailableMessage);
       return;
     }
 
     setGitActionLoading(action);
     try {
-      const result = await window.codeWatch.assistants.draftGitArtifacts(activeSession.session.id, action);
+      const result = await window.codeWatch.assistants.draftGitArtifactsWithProvider(activeSession.session.id, assistantProvider, action);
       setDraftResult(result);
       setDraftDialogOpen(true);
       clearError();
     } catch (error) {
-      setUiError(error, "Failed to draft with Codex.");
+      setUiError(error, `Failed to draft with ${activeAssistantLabel}.`);
     } finally {
       setGitActionLoading(null);
     }
@@ -1656,13 +1686,13 @@ export default function App() {
               className="draft-dialog"
               role="dialog"
               aria-modal="true"
-              aria-label="Codex draft"
+              aria-label={`${activeAssistantLabel} draft`}
               onClick={(event) => event.stopPropagation()}
             >
               <div className="draft-dialog-header">
                 <div>
-                  <h3>Codex Draft</h3>
-                  <p>{codexStatus?.version ? `Codex ${codexStatus.version}` : "Codex CLI"} · Live working tree for commits, review session for PRs</p>
+                  <h3>{activeAssistantLabel} Draft</h3>
+                  <p>{activeAssistantVersionLabel} · Live working tree for commits, review session for PRs</p>
                 </div>
                 <button type="button" className="pane-toolbar-button" onClick={() => setDraftDialogOpen(false)} aria-label="Close draft dialog">
                   <X />
