@@ -33,7 +33,7 @@ import {
 } from "@renderer/layout/review-layout";
 import { useAppStore } from "@renderer/store/app-store";
 import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
-import { FolderInput, Files, FileDiff as FDiff, NotebookPen } from 'lucide-react';
+import { FolderInput, Files, FileDiff as FDiff, NotebookPen, X } from 'lucide-react';
 
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
@@ -51,7 +51,7 @@ interface FlattenedDiffRows {
 }
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
-const DEFAULT_MIN_SIDEBAR_WIDTH = 180;
+const DEFAULT_MIN_SIDEBAR_WIDTH = 235;
 const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
 const MAX_RENDERED_DIFF_LINES = 1000;
@@ -74,6 +74,7 @@ export default function App() {
     activeSession,
     files,
     selectedFilePath,
+    openFiles,
     diffsByFile,
     threadPreviewsByFile,
     activeThread,
@@ -92,6 +93,8 @@ export default function App() {
     refreshProject,
     selectSession,
     selectFile,
+    closeFile,
+    reorderOpenFiles,
     listBranches,
     updateBaseBranch,
     searchFiles,
@@ -112,6 +115,8 @@ export default function App() {
   const [layoutProjectId, setLayoutProjectId] = useState<string | null>(null);
   const [draggedPaneId, setDraggedPaneId] = useState<ReviewPaneId | null>(null);
   const [dropTargetPaneId, setDropTargetPaneId] = useState<ReviewPaneId | null>(null);
+  const [draggedTab, setDraggedTab] = useState<string | null>(null);
+  const [dropTargetTab, setDropTargetTab] = useState<string | null>(null);
   const [isBaseBranchMenuOpen, setBaseBranchMenuOpen] = useState(false);
   const [loadingBaseBranches, setLoadingBaseBranches] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<{
@@ -162,14 +167,14 @@ export default function App() {
     () => [
       ...(activeProject
         ? [
-            {
-              id: "switch-review-branch",
-              title: "Switch Review Branch",
-              subtitle: `Choose a base branch for ${activeProject.name}`,
-              keywords: ["branch", "base", "review", "switch", "compare"],
-              execute: () => void showBranchPicker(activeProject.id, activeProject.name)
-            }
-          ]
+          {
+            id: "switch-review-branch",
+            title: "Switch Review Branch",
+            subtitle: `Choose a base branch for ${activeProject.name}`,
+            keywords: ["branch", "base", "review", "switch", "compare"],
+            execute: () => void showBranchPicker(activeProject.id, activeProject.name)
+          }
+        ]
         : []),
       {
         id: "search-files",
@@ -452,6 +457,21 @@ export default function App() {
 
   useEffect(() => {
     const handleGlobalFileSearchKeys = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() === "w" &&
+        event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+        const { selectedFilePath, closeFile: closeFileAction } = useAppStore.getState();
+        if (selectedFilePath) {
+          void closeFileAction(selectedFilePath);
+        }
+        return;
+      }
+
       if (event.key === "/" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
         event.preventDefault();
         openCommandMenu();
@@ -555,10 +575,14 @@ export default function App() {
 
   async function applyFileSearchResult(result: FileSearchResult) {
     closeFileSearch();
-    if (activeProjectId !== result.projectId) {
+    const state = useAppStore.getState();
+    if (state.activeProjectId !== result.projectId) {
       await selectProject(result.projectId);
     }
-    await selectSession(result.projectId, result.sessionId);
+    const nextState = useAppStore.getState();
+    if (nextState.activeSession?.session.id !== result.sessionId) {
+      await selectSession(result.projectId, result.sessionId);
+    }
     await selectFile(result.filePath);
   }
 
@@ -812,9 +836,8 @@ export default function App() {
       return (
         <section key={paneId} className="review-pane file-pane">
           <div
-            className={`pane-header pane-header-draggable ${
-              draggedPaneId === paneId ? "pane-header-dragging" : ""
-            } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
+            className={`pane-header pane-header-draggable ${draggedPaneId === paneId ? "pane-header-dragging" : ""
+              } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
             draggable
             onDragStart={(event) => beginPaneReorder(event, paneId)}
             onDragOver={(event) => handlePaneHeaderDragOver(event, paneId)}
@@ -839,16 +862,106 @@ export default function App() {
       return (
         <section key={paneId} className="review-pane diff-pane">
           <div
-            className={`pane-header pane-header-draggable ${
-              draggedPaneId === paneId ? "pane-header-dragging" : ""
-            } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
+            className={`pane-header pane-header-draggable ${draggedPaneId === paneId ? "pane-header-dragging" : ""
+              } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
             draggable
             onDragStart={(event) => beginPaneReorder(event, paneId)}
-            onDragOver={(event) => handlePaneHeaderDragOver(event, paneId)}
-            onDrop={(event) => handlePaneHeaderDrop(event, paneId)}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("application/vnd.code-watch.file") || event.dataTransfer.types.includes("application/vnd.code-watch.tab")) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+              } else {
+                handlePaneHeaderDragOver(event, paneId);
+              }
+            }}
+            onDrop={(event) => {
+              if (event.dataTransfer.types.includes("application/vnd.code-watch.tab")) {
+                event.preventDefault();
+                event.stopPropagation();
+                const draggedFile = event.dataTransfer.getData("application/vnd.code-watch.tab");
+                if (draggedFile) {
+                  const newOpenFiles = openFiles.filter(f => f !== draggedFile);
+                  newOpenFiles.push(draggedFile);
+                  reorderOpenFiles(newOpenFiles);
+                }
+                setDraggedTab(null);
+                setDropTargetTab(null);
+              } else if (event.dataTransfer.types.includes("application/vnd.code-watch.file")) {
+                event.preventDefault();
+                event.stopPropagation();
+                const droppedFile = event.dataTransfer.getData("application/vnd.code-watch.file");
+                if (droppedFile) {
+                  void selectFile(droppedFile);
+                }
+                setDropTargetPaneId(null);
+              } else {
+                handlePaneHeaderDrop(event, paneId);
+              }
+            }}
             onDragEnd={clearPaneDragState}
           >
-            <h3>{selectedFilePath ?? "Diff"}</h3>
+            <div className="diff-tabs" onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
+              {openFiles.length > 0 ? (
+                openFiles.map((file) => {
+                  const isActive = file === selectedFilePath;
+                  return (
+                    <div
+                      key={file}
+                      className={`diff-tab ${isActive ? "diff-tab-active" : ""} ${draggedTab === file ? "diff-tab-dragging" : ""
+                        } ${dropTargetTab === file && draggedTab !== file ? "diff-tab-drop-target" : ""}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.setData("application/vnd.code-watch.tab", file);
+                        setDraggedTab(file);
+                        setDropTargetTab(file);
+                      }}
+                      onDragOver={(e) => {
+                        if (e.dataTransfer.types.includes("application/vnd.code-watch.tab")) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (dropTargetTab !== file) setDropTargetTab(file);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const draggedFile = e.dataTransfer.getData("application/vnd.code-watch.tab");
+                        if (draggedFile && draggedFile !== file) {
+                          const newOpenFiles = reorderIdList(openFiles, draggedFile, file);
+                          if (newOpenFiles.length > 0) reorderOpenFiles(newOpenFiles);
+                        }
+                        setDraggedTab(null);
+                        setDropTargetTab(null);
+                      }}
+                      onDragEnd={(e) => {
+                        e.stopPropagation();
+                        setDraggedTab(null);
+                        setDropTargetTab(null);
+                      }}
+                      onClick={() => {
+                        if (!isActive) {
+                          void selectFile(file);
+                        }
+                      }}
+                    >
+                      <span className="diff-tab-label">{file.split('/').pop() || file}</span>
+                      <button
+                        className="diff-tab-close"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void closeFile(file);
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <h3>Diff</h3>
+              )}
+            </div>
             <div className="pane-header-actions">
               {loadingDiff ? <span className="loading-pill">Loading</span> : null}
             </div>
@@ -873,9 +986,8 @@ export default function App() {
     return (
       <section key={paneId} className="review-pane thread-pane">
         <div
-          className={`pane-header pane-header-draggable ${
-            draggedPaneId === paneId ? "pane-header-dragging" : ""
-          } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
+          className={`pane-header pane-header-draggable ${draggedPaneId === paneId ? "pane-header-dragging" : ""
+            } ${dropTargetPaneId === paneId && draggedPaneId !== paneId ? "pane-header-drop-target" : ""}`}
           draggable
           onDragStart={(event) => beginPaneReorder(event, paneId)}
           onDragOver={(event) => handlePaneHeaderDragOver(event, paneId)}
@@ -924,7 +1036,7 @@ export default function App() {
             onClick={() => void addProject()}
             aria-label="Add repository"
           >
-                        <FolderInput style={{ paddingTop:"25%"}} />
+            <FolderInput style={{ paddingTop: "25%" }} />
           </button>
         </div>
 
@@ -938,11 +1050,9 @@ export default function App() {
               return (
                 <button
                   key={project.id}
-                  className={`project-button project-row ${isActive ? "project-row-active" : ""} ${
-                    draggedProjectId === project.id ? "project-row-dragging" : ""
-                  } ${
-                    dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
-                  }`}
+                  className={`project-button project-row ${isActive ? "project-row-active" : ""} ${draggedProjectId === project.id ? "project-row-dragging" : ""
+                    } ${dropTargetProjectId === project.id && draggedProjectId !== project.id ? "project-row-drop-target" : ""
+                    }`}
                   draggable
                   onDragStart={(event) => beginProjectReorder(event, project.id)}
                   onDragOver={(event) => handleProjectDragOver(event, project.id)}
@@ -1008,7 +1118,7 @@ export default function App() {
                   aria-label="Toggle files pane"
                   onClick={() => togglePaneVisibility("files")}
                 >
-                <Files/>
+                  <Files />
                 </button>
                 <button
                   type="button"
@@ -1017,7 +1127,7 @@ export default function App() {
                   aria-label="Toggle diff pane"
                   onClick={() => togglePaneVisibility("diff")}
                 >
-                <FDiff/>
+                  <FDiff />
                 </button>
                 <button
                   type="button"
@@ -1026,7 +1136,7 @@ export default function App() {
                   aria-label="Toggle notes pane"
                   onClick={() => togglePaneVisibility("threads")}
                 >
-                <NotebookPen/>
+                  <NotebookPen />
                 </button>
               </div>
               <div className="topbar-meta">
@@ -1061,9 +1171,8 @@ export default function App() {
                             type="button"
                             role="option"
                             aria-selected={branch === activeProject.defaultBaseBranch}
-                            className={`base-branch-option ${
-                              branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
-                            }`}
+                            className={`base-branch-option ${branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
+                              }`}
                             onClick={() => selectBaseBranch(branch)}
                           >
                             {branch}

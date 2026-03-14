@@ -33,6 +33,11 @@ export function FileList({
               key={file.id}
               className={`file-row ${selectedFilePath === file.filePath ? "file-row-active" : ""}`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.setData("application/vnd.code-watch.file", file.filePath);
+                event.dataTransfer.effectAllowed = "copyMove";
+              }}
               onClick={() => {
                 startTransition(() => {
                   void onSelect(file.filePath);
