@@ -1,5 +1,3 @@
-import type { ReviewSessionSummary } from "@shared/types";
-
 export interface CommandMenuItem {
   id: string;
   title: string;
@@ -7,9 +5,9 @@ export interface CommandMenuItem {
   keywords?: string[];
 }
 
-export interface ReviewSessionCommandMenuItem extends CommandMenuItem {
+export interface BranchCommandMenuItem extends CommandMenuItem {
   projectId: string;
-  sessionId: string;
+  branch: string;
   active: boolean;
 }
 
@@ -30,21 +28,18 @@ export function filterCommandMenuItems<T extends CommandMenuItem>(items: readonl
   });
 }
 
-export function createReviewSessionCommandMenuItems(
-  sessions: readonly ReviewSessionSummary[],
-  activeSessionId: string | null
-): ReviewSessionCommandMenuItem[] {
-  return sessions.map((session) => ({
-    id: `review-session:${session.id}`,
-    projectId: session.projectId,
-    sessionId: session.id,
-    title: session.branchName,
-    subtitle: `${shortSha(session.headSha)} · base ${session.baseBranch}${session.id === activeSessionId ? " · current" : ""}`,
-    keywords: [session.branchName, session.baseBranch, session.headSha],
-    active: session.id === activeSessionId
+export function createBranchCommandMenuItems(
+  projectId: string,
+  branches: readonly string[],
+  activeBranch: string | null
+): BranchCommandMenuItem[] {
+  return branches.map((branch) => ({
+    id: `branch:${projectId}:${branch}`,
+    projectId,
+    branch,
+    title: branch,
+    subtitle: branch === activeBranch ? "Current base branch" : "Switch review to this base branch",
+    keywords: branch.split("/"),
+    active: branch === activeBranch
   }));
-}
-
-function shortSha(sha: string): string {
-  return sha.slice(0, 7);
 }

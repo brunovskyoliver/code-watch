@@ -321,6 +321,8 @@ body.is-resizing .sidebar-resizer::before {
 }
 
 .topbar {
+  position: relative;
+  z-index: 8;
   min-height: var(--titlebar-height);
   padding: 16px 24px 14px;
   border-bottom: 1px solid var(--border);
@@ -796,6 +798,8 @@ body.is-resizing .pane-resizer::before {
 
 .base-branch-control {
   position: relative;
+  z-index: 12;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -825,18 +829,20 @@ body.is-resizing .pane-resizer::before {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 5;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 220px;
   max-height: 280px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(18, 20, 24, 0.97);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
 }
 
 .base-branch-option {
