@@ -332,4 +332,102 @@ describe("CodexAppServerService", () => {
       expect.any(String)
     );
   });
+
+  it("pushes without creating a PR when the current branch matches the base branch", async () => {
+    const git = {
+      stagePaths: vi.fn(async () => undefined),
+      getCommitSubjects: vi.fn(async () => ["Ship git automation"]),
+      getDiffStat: vi.fn(async () => " App.tsx | 10 +++++-----"),
+      getCombinedDiff: vi.fn(async () => "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+push"),
+      getWorkingTreeSnapshot: vi.fn(async () => ({
+        status: "",
+        stagedStat: "",
+        unstagedStat: "",
+        stagedDiff: "",
+        unstagedDiff: ""
+      })),
+      commit: vi.fn(async () => undefined),
+      pushHead: vi.fn(async () => undefined),
+      getRepoState: vi.fn(async () => ({
+        rootPath: detail.project.repoPath,
+        currentBranch: "main",
+        headSha: "head_after_push",
+        dirty: false
+      })),
+      getCommitSha: vi.fn(async () => detail.session.baseSha),
+      getMergeBase: vi.fn(async () => "head_after_push"),
+      getChangedFiles: vi.fn(async () => []),
+      createPullRequest: vi.fn(async () => "https://github.com/openai/code-watch/pull/12")
+    } as unknown as GitService;
+
+    const service = new CodexAppServerService(git, vi.fn());
+    const result = await service.runGitAction({
+      repoPath: detail.project.repoPath,
+      session: {
+        ...detail,
+        session: {
+          ...detail.session,
+          branchName: "main",
+          baseBranch: "main"
+        }
+      },
+      files: [],
+      action: "push"
+    });
+
+    expect(result.pushed).toBe(true);
+    expect(result.prUrl).toBeNull();
+    expect(result.summary).toContain("PR skipped because the current branch matches the base branch");
+    expect(git.pushHead).toHaveBeenCalledWith(detail.project.repoPath);
+    expect(git.createPullRequest).not.toHaveBeenCalled();
+  });
+
+  it("pushes without creating a PR when there are no committed changes relative to the base branch", async () => {
+    const git = {
+      stagePaths: vi.fn(async () => undefined),
+      getCommitSubjects: vi.fn(async () => ["Ship git automation"]),
+      getDiffStat: vi.fn(async () => " App.tsx | 10 +++++-----"),
+      getCombinedDiff: vi.fn(async () => "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+push"),
+      getWorkingTreeSnapshot: vi.fn(async () => ({
+        status: "",
+        stagedStat: "",
+        unstagedStat: "",
+        stagedDiff: "",
+        unstagedDiff: ""
+      })),
+      commit: vi.fn(async () => undefined),
+      pushHead: vi.fn(async () => undefined),
+      getRepoState: vi.fn(async () => ({
+        rootPath: detail.project.repoPath,
+        currentBranch: "feature/codex",
+        headSha: "same_sha",
+        dirty: false
+      })),
+      getCommitSha: vi.fn(async () => detail.session.baseSha),
+      getMergeBase: vi.fn(async () => "same_sha"),
+      getChangedFiles: vi.fn(async () => []),
+      createPullRequest: vi.fn(async () => "https://github.com/openai/code-watch/pull/12")
+    } as unknown as GitService;
+
+    const service = new CodexAppServerService(git, vi.fn());
+    const result = await service.runGitAction({
+      repoPath: detail.project.repoPath,
+      session: {
+        ...detail,
+        session: {
+          ...detail.session,
+          branchName: "feature/codex",
+          baseBranch: "main"
+        }
+      },
+      files: [],
+      action: "push"
+    });
+
+    expect(result.pushed).toBe(true);
+    expect(result.prUrl).toBeNull();
+    expect(result.summary).toContain("PR skipped because there are no committed changes relative to main");
+    expect(git.pushHead).toHaveBeenCalledWith(detail.project.repoPath);
+    expect(git.createPullRequest).not.toHaveBeenCalled();
+  });
 });
