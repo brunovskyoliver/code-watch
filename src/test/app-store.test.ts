@@ -19,6 +19,7 @@ function makeProject(headSha: string): ProjectSummary {
     repoPath: "/tmp/demo",
     defaultBaseBranch: "main",
     sortOrder: 1,
+    isPinned: false,
     createdAt: 1,
     lastOpenedAt: 1,
     currentBranch: "feature/demo",
@@ -53,6 +54,7 @@ const files: ChangedFile[] = [
   {
     id: "file_1",
     sessionId: "session_live",
+    source: "committed",
     filePath: "src/app.ts",
     oldPath: "src/app.ts",
     newPath: "src/app.ts",
@@ -106,6 +108,7 @@ describe("app-store", () => {
         list: vi.fn(async () => [makeProject("head_live")]),
         reorder: vi.fn(async () => [makeProject("head_live")]),
         remove: vi.fn(async () => undefined),
+        togglePin: vi.fn(async () => makeProject("head_live")),
         listBranches: vi.fn(async () => ["main", "origin/main"]),
         updateBaseBranch: vi.fn(async () => makeProject("head_live"))
       },
@@ -127,11 +130,22 @@ describe("app-store", () => {
       search: {
         files: vi.fn(async () => [])
       },
+      settings: {
+        loadKeybindings: vi.fn(async () => []),
+        openKeybindingsInEditor: vi.fn(async () => undefined),
+        reset: vi.fn(async () => undefined)
+      },
+      assistants: {
+        codexStatus: vi.fn(async () => ({ available: false, version: null, reason: "missing" })),
+        draftGitArtifacts: vi.fn(),
+        runGitAction: vi.fn()
+      },
       events: {
         onRepoChanged: vi.fn(() => () => undefined),
         onBranchChanged: vi.fn(() => () => undefined),
         onDirtyStateChanged: vi.fn(() => () => undefined),
-        onReviewSessionCreated: vi.fn(() => () => undefined)
+        onReviewSessionCreated: vi.fn(() => () => undefined),
+        onGitWorkflowProgress: vi.fn(() => () => undefined)
       }
     };
 
@@ -163,6 +177,6 @@ describe("app-store", () => {
     const state = useAppStore.getState();
     expect(state.activeSession?.session.id).toBe("session_live_new");
     expect(state.sessionsByProject.project_1?.at(0)?.id).toBe("session_live_new");
-    expect(state.selectedFilePath).toBe("src/app.ts");
+    expect(state.selectedFileId).toBe("file_1");
   });
 });

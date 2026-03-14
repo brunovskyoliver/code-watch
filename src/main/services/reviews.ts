@@ -157,14 +157,24 @@ export class ReviewService {
   }
 
   async files(sessionId: string): Promise<ChangedFile[]> {
+    const session = await this.db.query.reviewSessionsTable.findFirst({
+      where: eq(reviewSessionsTable.id, sessionId)
+    });
+    if (!session) {
+      throw new Error("Review session not found.");
+    }
+
+    const project = await this.requireProject(session.projectId);
     const files = await this.db.query.sessionFilesTable.findMany({
       where: eq(sessionFilesTable.sessionId, sessionId),
       orderBy: asc(sessionFilesTable.sortKey)
     });
+    const workingTreeFiles = await this.git.getWorkingTreeChangedFiles(project.repoPath, sessionId);
 
-    return files.map((file) => ({
+    const committedFiles = files.map((file) => ({
       id: file.id,
       sessionId: file.sessionId,
+      source: "committed" as const,
       filePath: file.filePath,
       oldPath: file.oldPath,
       newPath: file.newPath,
@@ -173,10 +183,12 @@ export class ReviewService {
       deletions: file.deletions,
       isBinary: file.isBinary
     }));
+
+    return [...workingTreeFiles, ...committedFiles];
   }
 
-  async diff(sessionId: string, filePath: string): Promise<FileDiff> {
-    const cacheKey = `${sessionId}:${filePath}`;
+  async diff(sessionId: string, filePath: string, source: ChangedFile["source"] = "committed"): Promise<FileDiff> {
+    const cacheKey = `${sessionId}:${source}:${filePath}`;
     const cached = this.diffCache.get(cacheKey);
     if (cached) {
       return cached.value;
@@ -190,6 +202,34 @@ export class ReviewService {
     }
 
     const project = await this.requireProject(session.projectId);
+    if (source === "working-tree") {
+      const workingTreeFiles = await this.git.getWorkingTreeChangedFiles(project.repoPath, sessionId);
+      const workingTreeFile = workingTreeFiles.find((entry) => entry.filePath === filePath);
+      if (!workingTreeFile) {
+        throw new Error("Working tree file not found.");
+      }
+
+      const diffText = await this.git.getWorkingTreeFileDiff(project.repoPath, filePath);
+      const value = parseUnifiedDiff(diffText, {
+        filePath,
+        oldPath: workingTreeFile.oldPath,
+        newPath: workingTreeFile.newPath,
+        status: workingTreeFile.status,
+        additions: workingTreeFile.additions,
+        deletions: workingTreeFile.deletions
+      });
+
+      this.diffCache.set(cacheKey, { value, at: Date.now() });
+      if (this.diffCache.size > 150) {
+        const oldestKey = this.diffCache.entries().next().value?.[0];
+        if (oldestKey) {
+          this.diffCache.delete(oldestKey);
+        }
+      }
+
+      return value;
+    }
+
     const file = await this.db.query.sessionFilesTable.findFirst({
       where: and(eq(sessionFilesTable.sessionId, sessionId), eq(sessionFilesTable.filePath, filePath))
     });
@@ -239,6 +279,7 @@ export class ReviewService {
       repoPath: project.repoPath,
       defaultBaseBranch: project.defaultBaseBranch,
       sortOrder: project.sortOrder,
+      isPinned: project.isPinned,
       createdAt: project.createdAt,
       lastOpenedAt: project.lastOpenedAt,
       currentBranch: state?.currentBranch ?? null,

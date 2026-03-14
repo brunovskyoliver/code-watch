@@ -11,6 +11,7 @@ function createFakeDb() {
       repoPath: "/tmp/demo",
       defaultBaseBranch: "main",
       sortOrder: 1,
+      isPinned: false,
       createdAt: 1,
       lastOpenedAt: 1
     }
@@ -126,6 +127,7 @@ function createGitMock() {
       {
         id: `${sessionId}:0:src/app.ts`,
         sessionId,
+        source: "committed" as const,
         filePath: "src/app.ts",
         oldPath: "src/app.ts",
         newPath: "src/app.ts",
@@ -136,6 +138,9 @@ function createGitMock() {
       }
     ]),
     getFileDiff: vi.fn(async () => diffText)
+    ,
+    getWorkingTreeChangedFiles: vi.fn(async () => []),
+    getWorkingTreeFileDiff: vi.fn(async () => "")
   } satisfies Partial<GitService> & {
     getRepoState: GitService["getRepoState"];
     safeGetRepoState: GitService["safeGetRepoState"];
@@ -143,6 +148,8 @@ function createGitMock() {
     getMergeBase: GitService["getMergeBase"];
     getChangedFiles: GitService["getChangedFiles"];
     getFileDiff: GitService["getFileDiff"];
+    getWorkingTreeChangedFiles: GitService["getWorkingTreeChangedFiles"];
+    getWorkingTreeFileDiff: GitService["getWorkingTreeFileDiff"];
   };
 
   return {
