@@ -91,7 +91,6 @@ import type {
   ThreadPreview
 } from "@shared/types";
 import {
-  Ban,
   ChevronDown,
   ChevronRight,
   CloudUpload,
@@ -266,7 +265,7 @@ export default function App() {
     : (codexStatus?.version ? `Codex ${codexStatus.version}` : "Codex CLI");
   const hasUncommittedChanges = activeSession?.dirty ?? false;
   const canPushBranch = (activeProject?.aheadCount ?? 0) > 0;
-  const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : (canPushBranch ? "Push" : "");
+  const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : (canPushBranch ? "Push" : "Up to Date");
   const canRunPush = hasUncommittedChanges || canPushBranch;
   const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];
   const branchPickerProjectId = commandMenuView.type === "switch-branch" ? commandMenuView.projectId : activeProjectId;
@@ -1558,13 +1557,8 @@ export default function App() {
                     className="git-action-primary"
                     onClick={() => void runGitPrimaryAction()}
                     disabled={!hasUncommittedChanges && !canPushBranch}
-                    aria-label={!hasUncommittedChanges && !canPushBranch ? "No git action available" : gitPrimaryLabel}
                   >
-                    {hasUncommittedChanges
-                      ? <GitCommitHorizontal className="git-action-icon" />
-                      : canPushBranch
-                        ? <CloudUpload className="git-action-icon" />
-                        : <Ban className="git-action-icon" />}
+                    {hasUncommittedChanges ? <GitCommitHorizontal className="git-action-icon" /> : <CloudUpload className="git-action-icon" />}
                     <span>{gitActionLoading === (hasUncommittedChanges ? "commit" : "push") ? (hasUncommittedChanges ? "Committing..." : "Pushing...") : gitPrimaryLabel}</span>
                   </button>
 
@@ -1573,6 +1567,7 @@ export default function App() {
                       type="button"
                       className="git-action-trigger"
                       aria-label="Open git action menu"
+                      disabled={!hasUncommittedChanges && !canPushBranch}
                     >
                       <ChevronDown className="git-action-chevron" />
                     </DropdownMenuTrigger>
@@ -1592,7 +1587,7 @@ export default function App() {
                         <DropdownMenuItem onClick={() => void runGitAction("push")} disabled={!canRunPush}>
                           <span className="git-action-menu-item-main">
                             <CloudUpload className="git-action-menu-icon" />
-                            <span>{gitActionLoading === "push" ? "Pushing..." : (canRunPush ? "Push" : "")}</span>
+                            <span>{gitActionLoading === "push" ? "Pushing..." : "Push"}</span>
                           </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
