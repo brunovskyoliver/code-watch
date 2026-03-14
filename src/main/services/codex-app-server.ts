@@ -245,6 +245,29 @@ export class CodexAppServerService {
 
       await this.git.pushHead(input.repoPath);
 
+      const liveContext = await this.buildLiveReviewContext(input);
+      const prBlockReason = getPullRequestBlockReason(liveContext.session, liveContext.files);
+      if (prBlockReason) {
+        this.emitWorkflow({
+          id: workflowId,
+          sessionId: input.session.session.id,
+          action: input.action,
+          stage: "completed",
+          title: "Push complete",
+          message: prBlockReason,
+          prUrl: null
+        });
+
+        return {
+          action: "push",
+          committed: commitTitle !== null,
+          pushed: true,
+          commitTitle,
+          summary: prBlockReason,
+          prUrl: null
+        };
+      }
+
       this.emitWorkflow({
         id: workflowId,
         sessionId: input.session.session.id,
@@ -255,7 +278,6 @@ export class CodexAppServerService {
         prUrl: null
       });
 
-      const liveContext = await this.buildLiveReviewContext(input);
       const draft = await this.draftGitArtifacts({
         repoPath: input.repoPath,
         session: liveContext.session,
@@ -822,6 +844,18 @@ function hasWorkingTreeChanges(snapshot: WorkingTreeSnapshot): boolean {
     snapshot.stagedDiff,
     snapshot.unstagedDiff
   ].some((value) => value.trim().length > 0);
+}
+
+function getPullRequestBlockReason(session: ReviewSessionDetail, files: ChangedFile[]): string | null {
+  if (session.session.branchName === session.session.baseBranch) {
+    return `Pushed ${session.session.branchName}; PR skipped because the current branch matches the base branch.`;
+  }
+
+  if (session.session.headSha === session.session.mergeBaseSha || files.length === 0) {
+    return `Pushed ${session.session.branchName}; PR skipped because there are no committed changes relative to ${session.session.baseBranch}.`;
+  }
+
+  return null;
 }
 
 function getStageablePaths(files: ChangedFile[]): string[] {
