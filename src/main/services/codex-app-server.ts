@@ -20,6 +20,12 @@ const MAX_DIFF_CHARS = 24_000;
 const MAX_DIFF_STAT_CHARS = 4_000;
 const MAX_COMMIT_SUBJECTS = 12;
 
+interface AssistantServiceOptions {
+  executable?: string;
+  assistantLabel?: string;
+  logPrefix?: string;
+}
+
 interface JsonRpcRequest {
   jsonrpc: "2.0";
   id: number;
@@ -59,11 +65,20 @@ interface JsonRpcNotification {
 }
 
 export class CodexAppServerService {
+  private readonly executable: string;
+  private readonly assistantLabel: string;
+  private readonly logPrefix: string;
+
   constructor(
     private readonly git: GitService,
     private readonly dispatchEvent: (channel: string, payload: unknown) => void,
-    private readonly codexExecutable = "codex"
-  ) {}
+    options?: string | AssistantServiceOptions
+  ) {
+    const normalizedOptions = typeof options === "string" ? { executable: options } : options;
+    this.executable = normalizedOptions?.executable ?? "codex";
+    this.assistantLabel = normalizedOptions?.assistantLabel ?? "Codex";
+    this.logPrefix = normalizedOptions?.logPrefix ?? "codex";
+  }
 
   async getStatus(): Promise<{ available: boolean; version: string | null; reason: string | null }> {
     try {
@@ -73,7 +88,7 @@ export class CodexAppServerService {
       return {
         available: false,
         version: null,
-        reason: error instanceof Error ? error.message : "Codex CLI is unavailable."
+        reason: error instanceof Error ? error.message : `${this.assistantLabel} CLI is unavailable.`
       };
     }
   }
@@ -84,7 +99,7 @@ export class CodexAppServerService {
     files: ChangedFile[];
     action: GitDraftAction;
   }): Promise<GitDraftResult> {
-    log.info("[codex] draftGitArtifacts:start", {
+    log.info(this.logTag("draftGitArtifacts:start"), {
       action: input.action,
       sessionId: input.session.session.id,
       repoPath: input.repoPath
@@ -92,7 +107,7 @@ export class CodexAppServerService {
     const status = await this.getStatus();
     if (!status.available) {
       throw new Error(
-        "Codex CLI was not found on PATH. Install Codex CLI and ensure `codex app-server` works in your terminal."
+        `${this.assistantLabel} CLI was not found on PATH. Install ${this.assistantLabel} CLI and ensure \`${this.executable} app-server\` works in your terminal.`
       );
     }
 
@@ -128,7 +143,7 @@ export class CodexAppServerService {
       prompt
     });
 
-    log.info("[codex] draftGitArtifacts:completed", {
+    log.info(this.logTag("draftGitArtifacts:completed"), {
       action: input.action,
       sessionId: input.session.session.id
     });
@@ -322,10 +337,10 @@ export class CodexAppServerService {
     }
   }
 
-  private async readVersion(): Promise<string> {
+  protected async readVersion(): Promise<string> {
     const client = this.spawnClient();
     try {
-      log.info("[codex] readVersion:initialize");
+      log.info(this.logTag("readVersion:initialize"));
       const result = await client.request("initialize", {
         clientInfo: {
           name: "code-watch",
@@ -342,49 +357,53 @@ export class CodexAppServerService {
     }
   }
 
-  private async runStructuredTurn(input: { cwd: string; prompt: string }): Promise<unknown> {
+  protected async runStructuredTurn(input: { cwd: string; prompt: string }): Promise<unknown> {
     const client = this.spawnClient();
 
     try {
-      log.info("[codex] turn:initialize", { cwd: input.cwd, promptLength: input.prompt.length });
+      log.info(this.logTag("turn:initialize"), { cwd: input.cwd, promptLength: input.prompt.length });
       await withTimeout(client.request("initialize", {
         clientInfo: {
           name: "code-watch",
           version: "0.1.0"
         }
-      }), CODEX_STARTUP_TIMEOUT_MS, "Timed out while starting Codex app-server.");
+      }), CODEX_STARTUP_TIMEOUT_MS, `Timed out while starting ${this.assistantLabel} app-server.`);
       client.notify("initialized");
 
-      log.info("[codex] turn:thread/start");
-      const thread = await withTimeout(client.request("thread/start", {}), CODEX_STARTUP_TIMEOUT_MS, "Timed out while creating a Codex thread.");
+      log.info(this.logTag("turn:thread/start"));
+      const thread = await withTimeout(client.request("thread/start", {}), CODEX_STARTUP_TIMEOUT_MS, `Timed out while creating a ${this.assistantLabel} thread.`);
       const threadId = getNestedString(thread, ["thread", "id"]);
       if (!threadId) {
-        throw new Error("Codex app-server did not return a threadId.");
+        throw new Error(`${this.assistantLabel} app-server did not return a threadId.`);
       }
 
-      log.info("[codex] turn:thread/started", { threadId });
+      log.info(this.logTag("turn:thread/started"), { threadId });
       const finalText = await client.runTurn({
         threadId,
         cwd: input.cwd,
         prompt: input.prompt
       });
 
-      log.info("[codex] turn:completed", { threadId, responseLength: finalText.length });
+      log.info(this.logTag("turn:completed"), { threadId, responseLength: finalText.length });
       await client.close();
-      return parseJsonDocument(finalText);
+      return parseJsonDocument(finalText, this.assistantLabel);
     } catch (error) {
-      log.error("[codex] turn:failed", error);
+      log.error(this.logTag("turn:failed"), error);
       await client.close();
       throw error;
     }
   }
 
   private spawnClient(): CodexJsonRpcClient {
-    return new CodexJsonRpcClient(this.codexExecutable);
+    return new CodexJsonRpcClient(this.executable, this.logPrefix, this.assistantLabel);
   }
 
   private emitWorkflow(payload: GitWorkflowEvent): void {
     this.dispatchEvent("git.workflowProgress", payload);
+  }
+
+  private logTag(step: string): string {
+    return `[${this.logPrefix}] ${step}`;
   }
 
   private async buildLiveReviewContext(input: {
@@ -435,8 +454,12 @@ class CodexJsonRpcClient {
   private nextId = 1;
   private closed = false;
 
-  constructor(private readonly executable: string) {
-    log.info("[codex] client:spawn", { executable: this.executable });
+  constructor(
+    private readonly executable: string,
+    private readonly logPrefix: string,
+    private readonly assistantLabel: string
+  ) {
+    log.info(this.logTag("client:spawn"), { executable: this.executable });
     this.child = spawn(this.executable, ["app-server"], {
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -447,16 +470,16 @@ class CodexJsonRpcClient {
     this.child.stderr.on("data", (chunk: string | Buffer) => {
       const value = chunk.toString();
       this.stderrChunks.push(value);
-      log.warn("[codex] client:stderr", value.trim());
+      log.warn(this.logTag("client:stderr"), value.trim());
     });
 
     this.child.once("error", (error) => {
-      log.error("[codex] client:error", error);
+      log.error(this.logTag("client:error"), error);
       this.rejectAll(new Error(`Failed to start ${this.executable} app-server: ${error.message}`));
     });
 
     this.child.once("close", (code) => {
-      log.info("[codex] client:close", { code });
+      log.info(this.logTag("client:close"), { code });
       this.closed = true;
       if (this.pending.size === 0) {
         return;
@@ -476,7 +499,7 @@ class CodexJsonRpcClient {
     const id = this.nextId;
     this.nextId += 1;
 
-    log.info("[codex] client:request", { id, method });
+    log.info(this.logTag("client:request"), { id, method });
     const payload: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
     const promise = new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -487,7 +510,7 @@ class CodexJsonRpcClient {
   }
 
   notify(method: string, params?: unknown): void {
-    log.info("[codex] client:notify", { method });
+    log.info(this.logTag("client:notify"), { method });
     const payload = {
       jsonrpc: "2.0" as const,
       method,
@@ -497,7 +520,7 @@ class CodexJsonRpcClient {
   }
 
   async runTurn(input: { threadId: string; cwd: string; prompt: string }): Promise<string> {
-    log.info("[codex] turn:start", {
+    log.info(this.logTag("turn:start"), {
       threadId: input.threadId,
       cwd: input.cwd,
       promptLength: input.prompt.length
@@ -519,14 +542,14 @@ class CodexJsonRpcClient {
 
     const turnId = getNestedString(started, ["turn", "id"]);
     if (!turnId) {
-      throw new Error("Codex app-server did not return a turn id.");
+      throw new Error(`${this.assistantLabel} app-server did not return a turn id.`);
     }
 
-    log.info("[codex] turn:started", { threadId: input.threadId, turnId });
+    log.info(this.logTag("turn:started"), { threadId: input.threadId, turnId });
     const completed = await withTimeout(
       this.waitForTurnCompletion(turnId),
       CODEX_TURN_TIMEOUT_MS,
-      "Timed out waiting for Codex to finish drafting."
+      `Timed out waiting for ${this.assistantLabel} to finish drafting.`
     );
     return completed;
   }
@@ -549,7 +572,7 @@ class CodexJsonRpcClient {
       return;
     }
 
-    log.info("[codex] client:message", trimmed.slice(0, 400));
+    log.info(this.logTag("client:message"), trimmed.slice(0, 400));
     const message = JSON.parse(trimmed) as JsonRpcSuccess | JsonRpcFailure | JsonRpcNotification;
     if ("method" in message) {
       this.handleNotification(message);
@@ -599,7 +622,7 @@ class CodexJsonRpcClient {
   }
 
   private handleNotification(message: JsonRpcNotification): void {
-    log.info("[codex] client:notification", { method: message.method });
+    log.info(this.logTag("client:notification"), { method: message.method });
     if (message.method === "item/completed") {
       this.handleCompletedItem(message.params);
       return;
@@ -616,7 +639,7 @@ class CodexJsonRpcClient {
 
     const finalText = extractFinalAgentText(message.params) ?? this.completedTurnItems.get(turnId) ?? null;
     if (!finalText) {
-      log.warn("[codex] turn:completed-without-text", { turnId });
+      log.warn(this.logTag("turn:completed-without-text"), { turnId });
       return;
     }
 
@@ -643,6 +666,10 @@ class CodexJsonRpcClient {
     }
 
     this.completedTurnItems.set(turnId, text);
+  }
+
+  private logTag(step: string): string {
+    return `[${this.logPrefix}] ${step}`;
   }
 }
 
@@ -819,12 +846,12 @@ function getNestedString(value: unknown, path: string[]): string | null {
   return typeof current === "string" ? current : null;
 }
 
-function parseJsonDocument(text: string): unknown {
+function parseJsonDocument(text: string, assistantLabel: string): unknown {
   try {
     return JSON.parse(text);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown parse error";
-    throw new Error(`Codex returned invalid JSON: ${message}`);
+    throw new Error(`${assistantLabel} returned invalid JSON: ${message}`);
   }
 }
 

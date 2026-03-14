@@ -157,6 +157,7 @@ export const fileSearchResultSchema = z.object({
 
 export const gitDraftActionSchema = z.enum(["commit", "pr", "commit-and-pr"]);
 export const gitRunActionSchema = z.enum(["commit", "push"]);
+export const assistantProviderSchema = z.enum(["codex", "opencode"]);
 
 const gitDraftDocumentSchema = z.object({
   title: z.string(),
@@ -218,6 +219,7 @@ export type ReviewSessionEvent = z.infer<typeof reviewSessionEventSchema>;
 export type FileSearchResult = z.infer<typeof fileSearchResultSchema>;
 export type GitDraftAction = z.infer<typeof gitDraftActionSchema>;
 export type GitRunAction = z.infer<typeof gitRunActionSchema>;
+export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
 export type GitDraftResult = z.infer<typeof gitDraftResultSchema>;
 export type CodexStatus = z.infer<typeof codexStatusSchema>;
 export type GitRunResult = z.infer<typeof gitRunResultSchema>;
@@ -263,8 +265,11 @@ export interface CodeWatchApi {
   };
   assistants: {
     codexStatus: () => Promise<CodexStatus>;
+    opencodeStatus: () => Promise<CodexStatus>;
     draftGitArtifacts: (sessionId: string, action: GitDraftAction) => Promise<GitDraftResult>;
+    draftGitArtifactsWithProvider: (sessionId: string, provider: AssistantProvider, action: GitDraftAction) => Promise<GitDraftResult>;
     runGitAction: (sessionId: string, action: GitRunAction) => Promise<GitRunResult>;
+    runGitActionWithProvider: (sessionId: string, provider: AssistantProvider, action: GitRunAction) => Promise<GitRunResult>;
   };
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => () => void;

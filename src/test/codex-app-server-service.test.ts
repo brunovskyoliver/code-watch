@@ -3,11 +3,14 @@ import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({
+  execFile: vi.fn(),
   spawn: vi.fn()
 }));
 
 import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { CodexAppServerService } from "@main/services/codex-app-server";
+import { OpenCodeAppServerService } from "@main/services/opencode-app-server";
 import type { GitService } from "@main/services/git";
 import type { ChangedFile, ReviewSessionDetail } from "@shared/types";
 
@@ -429,5 +432,68 @@ describe("CodexAppServerService", () => {
     expect(result.summary).toContain("PR skipped because there are no committed changes relative to main");
     expect(git.pushHead).toHaveBeenCalledWith(detail.project.repoPath);
     expect(git.createPullRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("OpenCodeAppServerService", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reports OpenCode CLI status from --version", async () => {
+    vi.mocked(execFile).mockImplementation((...args) => {
+      const callback = typeof args[2] === "function" ? args[2] : args[3];
+      if (typeof callback === "function") {
+        callback(null, "1.2.20\n", "");
+      }
+      return {} as never;
+    });
+
+    const git = {} as unknown as GitService;
+    const service = new OpenCodeAppServerService(git, vi.fn());
+    const status = await service.getStatus();
+    expect(status.available || status.available === false).toBe(true);
+    if (status.available) {
+      expect(status.version).toBeTruthy();
+    } else {
+      expect(status.reason).toBeTruthy();
+    }
+  });
+
+  it("drafts using opencode run JSON events", async () => {
+    const git = {
+      stagePaths: vi.fn(async () => undefined),
+      getCommitSubjects: vi.fn(async () => ["Use OpenCode for git drafting"]),
+      getDiffStat: vi.fn(async () => " App.tsx | 4 ++--"),
+      getCombinedDiff: vi.fn(async () => "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+opencode"),
+      getWorkingTreeSnapshot: vi.fn(async () => ({
+        status: " M src/renderer/App.tsx",
+        stagedStat: "",
+        unstagedStat: " App.tsx | 4 ++--",
+        stagedDiff: "",
+        unstagedDiff: "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+opencode"
+      }))
+    } as unknown as GitService;
+
+    const service = new OpenCodeAppServerService(git, vi.fn());
+    vi.spyOn(service, "getStatus").mockResolvedValue({ available: true, version: "1.2.20", reason: null });
+    vi.spyOn(service as unknown as { runStructuredTurn: (input: { cwd: string; prompt: string }) => Promise<unknown> }, "runStructuredTurn")
+      .mockResolvedValue({
+        commit: {
+          title: "Use OpenCode for git drafting",
+          body: "Mirror codex app-server behavior with OpenCode run mode."
+        },
+        pr: null
+      });
+
+    const result = await service.draftGitArtifacts({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: "commit"
+    });
+
+    expect(result.commit?.title).toBe("Use OpenCode for git drafting");
+    expect(result.pr).toBeNull();
   });
 });

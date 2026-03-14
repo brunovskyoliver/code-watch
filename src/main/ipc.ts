@@ -6,8 +6,10 @@ import type { ReviewService } from "@main/services/reviews";
 import type { SettingsService } from "@main/services/settings";
 import type { ThreadService } from "@main/services/threads";
 import type { CodexAppServerService } from "@main/services/codex-app-server";
+import type { OpenCodeAppServerService } from "@main/services/opencode-app-server";
 import type { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
 import {
+  assistantProviderSchema,
   changeSourceSchema,
   codexStatusSchema,
   fileSearchResultSchema,
@@ -32,8 +34,11 @@ export function registerIpcHandlers(services: {
   threads: ThreadService;
   settings: SettingsService;
   codex: CodexAppServerService;
+  opencode: OpenCodeAppServerService;
   watchers: RepoWatcherRegistry;
 }): void {
+  const getAssistantService = (provider: "codex" | "opencode") => (provider === "opencode" ? services.opencode : services.codex);
+
   ipcMain.handle("projects:pickDirectory", async () => services.projects.pickDirectory());
 
   ipcMain.handle("projects:list", async () => services.projects.list());
@@ -120,6 +125,8 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("assistants:codexStatus", async () => codexStatusSchema.parse(await services.codex.getStatus()));
 
+  ipcMain.handle("assistants:opencodeStatus", async () => codexStatusSchema.parse(await services.opencode.getStatus()));
+
   ipcMain.handle("assistants:draftGitArtifacts", async (_event, sessionId: string, action: unknown) => {
     const detail = await services.reviews.load(z.string().min(1).parse(sessionId));
     const files = await services.reviews.files(detail.session.id);
@@ -134,10 +141,41 @@ export function registerIpcHandlers(services: {
     return gitDraftResultSchema.parse(result);
   });
 
+  ipcMain.handle("assistants:draftGitArtifactsWithProvider", async (_event, sessionId: string, provider: unknown, action: unknown) => {
+    const detail = await services.reviews.load(z.string().min(1).parse(sessionId));
+    const files = await services.reviews.files(detail.session.id);
+    const parsedProvider = assistantProviderSchema.parse(provider);
+    const parsedAction = gitDraftActionSchema.parse(action);
+    const assistant = getAssistantService(parsedProvider);
+    const result = await assistant.draftGitArtifacts({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: parsedAction
+    });
+
+    return gitDraftResultSchema.parse(result);
+  });
+
   ipcMain.handle("assistants:runGitAction", async (_event, sessionId: string, action: unknown) => {
     const detail = await services.reviews.load(z.string().min(1).parse(sessionId));
     const files = await services.reviews.files(detail.session.id);
     const result = await services.codex.runGitAction({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: gitRunActionSchema.parse(action)
+    });
+
+    return gitRunResultSchema.parse(result);
+  });
+
+  ipcMain.handle("assistants:runGitActionWithProvider", async (_event, sessionId: string, provider: unknown, action: unknown) => {
+    const detail = await services.reviews.load(z.string().min(1).parse(sessionId));
+    const files = await services.reviews.files(detail.session.id);
+    const parsedProvider = assistantProviderSchema.parse(provider);
+    const assistant = getAssistantService(parsedProvider);
+    const result = await assistant.runGitAction({
       repoPath: detail.project.repoPath,
       session: detail,
       files,

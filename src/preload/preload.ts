@@ -43,8 +43,13 @@ const api: CodeWatchApi = {
   },
   assistants: {
     codexStatus: () => ipcRenderer.invoke("assistants:codexStatus"),
+    opencodeStatus: () => ipcRenderer.invoke("assistants:opencodeStatus"),
     draftGitArtifacts: (sessionId, action) => ipcRenderer.invoke("assistants:draftGitArtifacts", sessionId, action),
-    runGitAction: (sessionId, action) => ipcRenderer.invoke("assistants:runGitAction", sessionId, action)
+    draftGitArtifactsWithProvider: (sessionId, provider, action) =>
+      ipcRenderer.invoke("assistants:draftGitArtifactsWithProvider", sessionId, provider, action),
+    runGitAction: (sessionId, action) => ipcRenderer.invoke("assistants:runGitAction", sessionId, action),
+    runGitActionWithProvider: (sessionId, provider, action) =>
+      ipcRenderer.invoke("assistants:runGitActionWithProvider", sessionId, provider, action)
   },
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.changed", listener),
