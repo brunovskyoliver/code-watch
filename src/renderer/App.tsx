@@ -50,6 +50,15 @@ import {
   MenuSeparator,
   MenuTrigger
 } from "@renderer/components/ui/menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle
+} from "@renderer/components/ui/alert-dialog";
 import { matchesKeybinding } from "@renderer/keybindings";
 import { useAppStore } from "@renderer/store/app-store";
 import { DEFAULT_KEYBINDINGS, type Keybinding } from "@shared/keybindings";
@@ -82,6 +91,7 @@ const MIN_PANE_WIDTH = 180;
 const FILE_SEARCH_LIMIT = 5;
 const FILE_SEARCH_DEBOUNCE_MS = 120;
 const SETTINGS_MENU_LABEL = "Settings";
+const NO_SUPPORTED_EDITOR_ERROR = "No supported editor found. Install Visual Studio Code or Cursor.";
 
 const keybindingShortcutFallbacks: Record<string, string> = {
   "command-menu.open": "mod+/",
@@ -182,6 +192,7 @@ export default function App() {
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
   const [fileSearchSelectedIndex, setFileSearchSelectedIndex] = useState(0);
   const [keybindings, setKeybindings] = useState<Keybinding[]>(DEFAULT_KEYBINDINGS);
+  const [isUnsupportedEditorDialogOpen, setUnsupportedEditorDialogOpen] = useState(false);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarHeaderRef = useRef<HTMLDivElement | null>(null);
   const sidebarTitleRef = useRef<HTMLDivElement | null>(null);
@@ -702,7 +713,12 @@ export default function App() {
       setKeybindings(nextKeybindings);
       clearError();
     } catch (error) {
-      setUiError(error, "Failed to open keybindings in $EDITOR.");
+      if (isNoSupportedEditorError(error)) {
+        setUnsupportedEditorDialogOpen(true);
+        clearError();
+        return;
+      }
+      setUiError(error, "Failed to open keybindings in a supported editor.");
     }
   }
 
@@ -1446,6 +1462,20 @@ export default function App() {
           )}
         </CommandPaletteDialog>
 
+        <AlertDialog open={isUnsupportedEditorDialogOpen} onOpenChange={setUnsupportedEditorDialogOpen}>
+          <AlertDialogPopup>
+            <AlertDialogHeader>
+              <AlertDialogTitle>No supported editor found</AlertDialogTitle>
+              <AlertDialogDescription>
+                Install Visual Studio Code or Cursor to edit keybindings from Code Watch.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction>OK</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogPopup>
+        </AlertDialog>
+
         {error ? (
           <div className="toast">
             <span>{error}</span>
@@ -1455,6 +1485,10 @@ export default function App() {
       </div>
     </SidebarProvider>
   );
+}
+
+function isNoSupportedEditorError(error: unknown): boolean {
+  return error instanceof Error && error.message === NO_SUPPORTED_EDITOR_ERROR;
 }
 
 function DiffViewer({
