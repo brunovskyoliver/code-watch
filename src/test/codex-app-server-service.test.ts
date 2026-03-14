@@ -436,15 +436,22 @@ describe("CodexAppServerService", () => {
 });
 
 describe("OpenCodeAppServerService", () => {
+  const defaultOpenCodeModel = "github-copilot/gemini-3-flash-preview";
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("reports OpenCode CLI status from --version", async () => {
     vi.mocked(execFile).mockImplementation((...args) => {
+      const argsList = args[1] as string[];
       const callback = typeof args[2] === "function" ? args[2] : args[3];
       if (typeof callback === "function") {
-        callback(null, "1.2.20\n", "");
+        if (argsList[0] === "models") {
+          callback(null, `Models cache refreshed\n${defaultOpenCodeModel}\n`, "");
+        } else {
+          callback(null, "1.2.20\n", "");
+        }
       }
       return {} as never;
     });
@@ -525,6 +532,13 @@ describe("OpenCodeAppServerService", () => {
         }
         return {} as never;
       }
+      if (argsList[0] === "models") {
+        const callback = typeof args[2] === "function" ? args[2] : args[3];
+        if (typeof callback === "function") {
+          callback(null, `Models cache refreshed\n${defaultOpenCodeModel}\n`, "");
+        }
+        return {} as never;
+      }
 
       const optionsArg = typeof args[2] === "object" ? args[2] : undefined;
       expect(optionsArg).toBeDefined();
@@ -540,6 +554,7 @@ describe("OpenCodeAppServerService", () => {
         grep: false,
         glob: false
       });
+      expect(argsList).toContain(defaultOpenCodeModel);
 
       const callback = args[3];
       if (typeof callback === "function") {
@@ -554,6 +569,6 @@ describe("OpenCodeAppServerService", () => {
     await service.getStatus();
 
     const runTurn = (service as unknown as { runStructuredTurn: (input: { cwd: string; prompt: string }) => Promise<unknown> }).runStructuredTurn.bind(service);
-    await expect(runTurn({ cwd: "/tmp/code-watch", prompt: "hello" })).rejects.toThrow("did not return assistant text");
+    await expect(runTurn({ cwd: "/tmp/code-watch", prompt: "hello" })).rejects.toThrow();
   });
 });

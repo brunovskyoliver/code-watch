@@ -39,7 +39,9 @@ const api: CodeWatchApi = {
   settings: {
     loadKeybindings: () => ipcRenderer.invoke("settings:loadKeybindings"),
     openKeybindingsInEditor: () => ipcRenderer.invoke("settings:openKeybindingsInEditor"),
-    reset: () => ipcRenderer.invoke("settings:reset")
+    reset: () => ipcRenderer.invoke("settings:reset"),
+    loadAssistantSettings: () => ipcRenderer.invoke("settings:loadAssistantSettings"),
+    saveAssistantProvider: (provider) => ipcRenderer.invoke("settings:saveAssistantProvider", provider)
   },
   assistants: {
     codexStatus: () => ipcRenderer.invoke("assistants:codexStatus"),

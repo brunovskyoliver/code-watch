@@ -409,6 +409,26 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    void window.codeWatch.settings
+      .loadAssistantSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setAssistantProvider(settings.provider);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setUiError(error, "Failed to load assistant settings.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     void window.codeWatch.assistants.codexStatus()
       .then((status) => {
         if (!cancelled) {
@@ -899,6 +919,9 @@ export default function App() {
     const nextProvider = nextValues[0];
     if (nextProvider === "codex" || nextProvider === "opencode") {
       setAssistantProvider(nextProvider);
+      void window.codeWatch.settings.saveAssistantProvider(nextProvider).catch((error) => {
+        setUiError(error, "Failed to save assistant provider.");
+      });
     }
   }
 

@@ -158,6 +158,9 @@ export const fileSearchResultSchema = z.object({
 export const gitDraftActionSchema = z.enum(["commit", "pr", "commit-and-pr"]);
 export const gitRunActionSchema = z.enum(["commit", "push"]);
 export const assistantProviderSchema = z.enum(["codex", "opencode"]);
+export const assistantSettingsSchema = z.object({
+  provider: assistantProviderSchema
+});
 
 const gitDraftDocumentSchema = z.object({
   title: z.string(),
@@ -220,6 +223,7 @@ export type FileSearchResult = z.infer<typeof fileSearchResultSchema>;
 export type GitDraftAction = z.infer<typeof gitDraftActionSchema>;
 export type GitRunAction = z.infer<typeof gitRunActionSchema>;
 export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
+export type AssistantSettings = z.infer<typeof assistantSettingsSchema>;
 export type GitDraftResult = z.infer<typeof gitDraftResultSchema>;
 export type CodexStatus = z.infer<typeof codexStatusSchema>;
 export type GitRunResult = z.infer<typeof gitRunResultSchema>;
@@ -262,6 +266,8 @@ export interface CodeWatchApi {
     loadKeybindings: () => Promise<z.infer<typeof keybindingsSchema>>;
     openKeybindingsInEditor: () => Promise<void>;
     reset: () => Promise<void>;
+    loadAssistantSettings: () => Promise<AssistantSettings>;
+    saveAssistantProvider: (provider: AssistantProvider) => Promise<AssistantSettings>;
   };
   assistants: {
     codexStatus: () => Promise<CodexStatus>;

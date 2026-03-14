@@ -9,6 +9,7 @@ import type { CodexAppServerService } from "@main/services/codex-app-server";
 import type { OpenCodeAppServerService } from "@main/services/opencode-app-server";
 import type { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
 import {
+  assistantSettingsSchema,
   assistantProviderSchema,
   changeSourceSchema,
   codexStatusSchema,
@@ -122,6 +123,14 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("settings:reset", async () => {
     await services.settings.reset();
   });
+
+  ipcMain.handle("settings:loadAssistantSettings", async () =>
+    assistantSettingsSchema.parse(await services.settings.loadAssistantSettings())
+  );
+
+  ipcMain.handle("settings:saveAssistantProvider", async (_event, provider: unknown) =>
+    assistantSettingsSchema.parse(await services.settings.saveAssistantProvider(assistantProviderSchema.parse(provider)))
+  );
 
   ipcMain.handle("assistants:codexStatus", async () => codexStatusSchema.parse(await services.codex.getStatus()));
 

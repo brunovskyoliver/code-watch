@@ -1,9 +1,17 @@
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
+import type { AppDatabase } from "@main/db/client";
+import { assistantProviderSchema, type AssistantProvider, type AssistantSettings } from "@shared/types";
+import { settingsTable } from "@main/db/schema";
+import { eq } from "drizzle-orm";
 import { DEFAULT_KEYBINDINGS, keybindingsSchema, type Keybinding } from "@shared/keybindings";
+
+const ASSISTANT_PROVIDER_KEY = "assistant.provider";
+const DEFAULT_ASSISTANT_PROVIDER: AssistantProvider = "codex";
 
 export class SettingsService {
   constructor(
+    private readonly db: AppDatabase,
     private readonly keybindingsPath: string,
     private readonly platform: NodeJS.Platform = process.platform
   ) {}
@@ -41,6 +49,27 @@ export class SettingsService {
 
   async reset(): Promise<void> {
     await this.writeKeybindingsFile(DEFAULT_KEYBINDINGS);
+    await this.saveAssistantProvider(DEFAULT_ASSISTANT_PROVIDER);
+  }
+
+  async loadAssistantSettings(): Promise<AssistantSettings> {
+    const row = this.db.select().from(settingsTable).where(eq(settingsTable.key, ASSISTANT_PROVIDER_KEY)).get();
+    const parsed = assistantProviderSchema.safeParse(row?.value);
+    return { provider: parsed.success ? parsed.data : DEFAULT_ASSISTANT_PROVIDER };
+  }
+
+  async saveAssistantProvider(provider: AssistantProvider): Promise<AssistantSettings> {
+    const parsedProvider = assistantProviderSchema.parse(provider);
+    this.db
+      .insert(settingsTable)
+      .values({ key: ASSISTANT_PROVIDER_KEY, value: parsedProvider })
+      .onConflictDoUpdate({
+        target: settingsTable.key,
+        set: { value: parsedProvider }
+      })
+      .run();
+
+    return { provider: parsedProvider };
   }
 
   private async readKeybindingsFile(): Promise<Keybinding[] | null> {
