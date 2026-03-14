@@ -1,7 +1,9 @@
 import {
   createDefaultReviewLayout,
+  getReviewLayoutStorageKey,
   getNormalizedPaneSizes,
   getVisibleReviewPanes,
+  readStoredReviewLayout,
   parseStoredReviewLayout,
   reorderReviewPanes,
   setReviewPaneVisibility
@@ -60,5 +62,40 @@ describe("review-layout", () => {
     expect(Math.round(sizes.files + sizes.diff)).toBe(100);
     expect(sizes.threads).toBe(0);
     expect(sizes.diff).toBeGreaterThan(sizes.files);
+  });
+
+  it("creates project-specific storage keys", () => {
+    expect(getReviewLayoutStorageKey("project_123")).toBe("code-watch.review-layout.v2.project_123");
+  });
+
+  it("falls back to the legacy layout when a project-specific layout is missing", () => {
+    const layout = readStoredReviewLayout(
+      {
+        getItem(key) {
+          if (key === "code-watch.review-layout.v1") {
+            return JSON.stringify({
+              order: ["threads", "diff", "files"],
+              visibility: {
+                files: true,
+                diff: true,
+                threads: false
+              },
+              sizes: {
+                files: 20,
+                diff: 55,
+                threads: 25
+              }
+            });
+          }
+
+          return null;
+        }
+      },
+      "project_123"
+    );
+
+    expect(layout.order).toEqual(["threads", "diff", "files"]);
+    expect(layout.visibility.threads).toBe(false);
+    expect(layout.sizes.diff).toBe(55);
   });
 });
