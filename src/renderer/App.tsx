@@ -930,10 +930,6 @@ export default function App() {
     useAppStore.setState({ error: message });
   }
 
-  function setUiToastMessage(message: string) {
-    useAppStore.setState({ error: message });
-  }
-
   async function runGitPrimaryAction() {
     await runGitAction(hasUncommittedChanges ? "commit" : "push");
   }
@@ -950,10 +946,9 @@ export default function App() {
 
     setGitActionLoading(action);
     try {
-      const result = await window.codeWatch.assistants.runGitActionWithProvider(activeSession.session.id, assistantProvider, action);
+      await window.codeWatch.assistants.runGitActionWithProvider(activeSession.session.id, assistantProvider, action);
       setDraftDialogOpen(false);
       setDraftResult(null);
-      setUiToastMessage(result.summary);
       await refreshProject(activeSession.project.id);
     } catch (error) {
       setUiError(error, `Failed to ${action}.`);
