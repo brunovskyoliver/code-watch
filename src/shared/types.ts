@@ -45,7 +45,8 @@ export const projectSummarySchema = z.object({
   lastOpenedAt: z.number().int(),
   currentBranch: z.string().nullable(),
   headSha: z.string().nullable(),
-  dirty: z.boolean()
+  dirty: z.boolean(),
+  aheadCount: z.number().int().nonnegative()
 });
 
 export const reviewSessionSummarySchema = z.object({

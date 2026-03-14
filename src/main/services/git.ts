@@ -11,6 +11,7 @@ export interface RepoState {
   currentBranch: string | null;
   headSha: string | null;
   dirty: boolean;
+  aheadCount: number;
 }
 
 export interface WorkingTreeSnapshot {
@@ -73,13 +74,14 @@ export class GitService {
 
   async getRepoState(repoPath: string): Promise<RepoState> {
     const rootPath = await this.assertGitRepo(repoPath);
-    const [currentBranch, headSha, dirty] = await Promise.all([
+    const [currentBranch, headSha, dirty, aheadCount] = await Promise.all([
       this.runGit(rootPath, ["branch", "--show-current"]).then((value) => value.trim() || null),
       this.runGit(rootPath, ["rev-parse", "HEAD"]).then((value) => value.trim()).catch(() => null),
-      this.runGit(rootPath, ["status", "--porcelain=v1"]).then((value) => value.trim().length > 0)
+      this.runGit(rootPath, ["status", "--porcelain=v1"]).then((value) => value.trim().length > 0),
+      this.getAheadCount(rootPath)
     ]);
 
-    return { rootPath, currentBranch, headSha, dirty };
+    return { rootPath, currentBranch, headSha, dirty, aheadCount };
   }
 
   async safeGetRepoState(repoPath: string): Promise<RepoState | null> {
@@ -386,6 +388,21 @@ export class GitService {
       } catch {
         return false;
       }
+    }
+  }
+
+  private async getAheadCount(repoPath: string): Promise<number> {
+    try {
+      const upstream = (await this.runGit(repoPath, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])).trim();
+      if (!upstream) {
+        return 0;
+      }
+
+      const output = await this.runGit(repoPath, ["rev-list", "--count", `${upstream}..HEAD`]);
+      const parsed = Number.parseInt(output.trim(), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    } catch {
+      return 0;
     }
   }
 

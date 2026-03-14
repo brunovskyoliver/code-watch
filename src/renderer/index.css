@@ -664,6 +664,15 @@ body.is-resizing .sidebar-resizer::before {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.git-action-primary:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.git-action-primary:disabled:hover {
+  background: transparent;
+}
+
 .git-action-primary:focus-visible,
 .git-action-trigger:focus-visible {
   outline: 1px solid rgba(255, 255, 255, 0.3);

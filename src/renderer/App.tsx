@@ -264,7 +264,9 @@ export default function App() {
     ? (opencodeStatus?.version ? `OpenCode ${opencodeStatus.version}` : "OpenCode CLI")
     : (codexStatus?.version ? `Codex ${codexStatus.version}` : "Codex CLI");
   const hasUncommittedChanges = activeSession?.dirty ?? false;
-  const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : "Push";
+  const canPushBranch = (activeProject?.aheadCount ?? 0) > 0;
+  const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : (canPushBranch ? "Push" : "Up to Date");
+  const canRunPush = hasUncommittedChanges || canPushBranch;
   const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];
   const branchPickerProjectId = commandMenuView.type === "switch-branch" ? commandMenuView.projectId : activeProjectId;
   const branchPickerProject =
@@ -931,6 +933,10 @@ export default function App() {
   }
 
   async function runGitPrimaryAction() {
+    if (!hasUncommittedChanges && !canPushBranch) {
+      return;
+    }
+
     await runGitAction(hasUncommittedChanges ? "commit" : "push");
   }
 
@@ -1546,7 +1552,12 @@ export default function App() {
             {activeSession && activeProject ? (
               <div className="topbar-actions">
                 <div ref={gitActionsControlRef} className="git-actions-control" role="group" aria-label="Git actions">
-                  <button type="button" className="git-action-primary" onClick={() => void runGitPrimaryAction()}>
+                  <button
+                    type="button"
+                    className="git-action-primary"
+                    onClick={() => void runGitPrimaryAction()}
+                    disabled={!hasUncommittedChanges && !canPushBranch}
+                  >
                     {hasUncommittedChanges ? <GitCommitHorizontal className="git-action-icon" /> : <CloudUpload className="git-action-icon" />}
                     <span>{gitActionLoading === (hasUncommittedChanges ? "commit" : "push") ? (hasUncommittedChanges ? "Committing..." : "Pushing...") : gitPrimaryLabel}</span>
                   </button>
@@ -1572,10 +1583,10 @@ export default function App() {
                             <span>{gitActionLoading === "commit" ? "Committing..." : "Commit"}</span>
                           </span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void runGitAction("push")}>
+                        <DropdownMenuItem onClick={() => void runGitAction("push")} disabled={!canRunPush}>
                           <span className="git-action-menu-item-main">
                             <CloudUpload className="git-action-menu-icon" />
-                            <span>{gitActionLoading === "push" ? "Pushing..." : "Push"}</span>
+                            <span>{gitActionLoading === "push" ? "Pushing..." : (canRunPush ? "Push" : "Up to Date")}</span>
                           </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
