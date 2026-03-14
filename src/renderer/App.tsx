@@ -11,9 +11,11 @@ import {
   useState
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { CommandPaletteDialog } from "@renderer/components/command-palette";
 import { FileList } from "@renderer/components/file-list";
 import { EmptyState, LoadingState } from "@renderer/components/shared";
 import { ThreadPanel } from "@renderer/components/thread-panel";
+import { filterCommandMenuItems, type CommandMenuItem } from "@renderer/command-menu";
 import {
   createDefaultReviewLayout,
   getNormalizedPaneSizes,
@@ -106,12 +108,16 @@ export default function App() {
     y: number;
     projectId: string;
   } | null>(null);
+  const [isCommandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [commandMenuQuery, setCommandMenuQuery] = useState("");
+  const [commandMenuSelectedIndex, setCommandMenuSelectedIndex] = useState(0);
   const [isFileSearchOpen, setFileSearchOpen] = useState(false);
   const [fileSearchQuery, setFileSearchQuery] = useState("");
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
   const [fileSearchSelectedIndex, setFileSearchSelectedIndex] = useState(0);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
+  const commandMenuInputRef = useRef<HTMLInputElement | null>(null);
   const fileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
   const deferredFilePath = useDeferredValue(selectedFilePath);
@@ -128,6 +134,32 @@ export default function App() {
     branchSet.add(activeProject.defaultBaseBranch);
     return [...branchSet].sort((a, b) => a.localeCompare(b));
   }, [activeProject, baseBranchesByProject]);
+  const commandMenuItems = useMemo(
+    () => [
+      {
+        id: "search-files",
+        title: "Search Files",
+        subtitle: "Jump to changed files across projects",
+        keywords: ["open", "find", "palette"],
+        execute: () => openFileSearch()
+      },
+      {
+        id: "add-project",
+        title: "Add Repository",
+        subtitle: "Add a local Git repository",
+        keywords: ["repo", "project", "folder"],
+        execute: () => {
+          closeCommandMenu();
+          void addProject();
+        }
+      }
+    ] satisfies Array<CommandMenuItem & { execute: () => void }>,
+    [addProject]
+  );
+  const filteredCommandMenuItems = useMemo(
+    () => filterCommandMenuItems(commandMenuItems, commandMenuQuery),
+    [commandMenuItems, commandMenuQuery]
+  );
   const effectivePaneOrder = reviewLayout.order;
   const visibleReviewPanes = useMemo(
     () => effectivePaneOrder.filter((paneId) => reviewLayout.visibility[paneId]),
@@ -256,14 +288,31 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!isFileSearchOpen) {
+    if (!isCommandMenuOpen && !isFileSearchOpen) {
       return;
     }
-    const frame = window.requestAnimationFrame(() => fileSearchInputRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => {
+      if (isCommandMenuOpen) {
+        commandMenuInputRef.current?.focus();
+        return;
+      }
+
+      fileSearchInputRef.current?.focus();
+    });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [isFileSearchOpen]);
+  }, [isCommandMenuOpen, isFileSearchOpen]);
+
+  useEffect(() => {
+    if (!isCommandMenuOpen) {
+      setCommandMenuQuery("");
+      setCommandMenuSelectedIndex(0);
+      return;
+    }
+
+    setCommandMenuSelectedIndex((index) => clamp(index, 0, Math.max(0, filteredCommandMenuItems.length - 1)));
+  }, [filteredCommandMenuItems.length, isCommandMenuOpen]);
 
   useEffect(() => {
     if (!isFileSearchOpen) {
@@ -299,6 +348,12 @@ export default function App() {
 
   useEffect(() => {
     const handleGlobalFileSearchKeys = (event: KeyboardEvent) => {
+      if (event.key === "/" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        openCommandMenu();
+        return;
+      }
+
       if (
         event.key === "/" &&
         !event.metaKey &&
@@ -308,11 +363,39 @@ export default function App() {
         !isEditableTarget(event.target)
       ) {
         event.preventDefault();
-        setBaseBranchMenuOpen(false);
-        setProjectContextMenu(null);
-        setFileSearchQuery("");
-        setFileSearchSelectedIndex(0);
-        setFileSearchOpen(true);
+        openFileSearch();
+        return;
+      }
+
+      if (isCommandMenuOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeCommandMenu();
+          return;
+        }
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setCommandMenuSelectedIndex((index) => clamp(index + 1, 0, Math.max(0, filteredCommandMenuItems.length - 1)));
+          return;
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setCommandMenuSelectedIndex((index) => clamp(index - 1, 0, Math.max(0, filteredCommandMenuItems.length - 1)));
+          return;
+        }
+
+        if (event.key === "Enter") {
+          const selectedCommand = filteredCommandMenuItems[commandMenuSelectedIndex];
+          if (!selectedCommand) {
+            return;
+          }
+
+          event.preventDefault();
+          selectedCommand.execute();
+        }
+
         return;
       }
 
@@ -352,18 +435,53 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleGlobalFileSearchKeys);
     };
-  }, [isFileSearchOpen, fileSearchResults, fileSearchSelectedIndex]);
+  }, [
+    commandMenuSelectedIndex,
+    filteredCommandMenuItems,
+    isCommandMenuOpen,
+    isFileSearchOpen,
+    fileSearchResults,
+    fileSearchSelectedIndex
+  ]);
 
-  const applyFileSearchResult = async (result: FileSearchResult) => {
-    setFileSearchOpen(false);
-    setFileSearchQuery("");
-    setFileSearchSelectedIndex(0);
+  async function applyFileSearchResult(result: FileSearchResult) {
+    closeFileSearch();
     if (activeProjectId !== result.projectId) {
       await selectProject(result.projectId);
     }
     await selectSession(result.projectId, result.sessionId);
     await selectFile(result.filePath);
-  };
+  }
+
+  function closeCommandMenu() {
+    setCommandMenuOpen(false);
+    setCommandMenuQuery("");
+    setCommandMenuSelectedIndex(0);
+  }
+
+  function closeFileSearch() {
+    setFileSearchOpen(false);
+    setFileSearchQuery("");
+    setFileSearchSelectedIndex(0);
+  }
+
+  function openCommandMenu() {
+    setBaseBranchMenuOpen(false);
+    setProjectContextMenu(null);
+    closeFileSearch();
+    setCommandMenuQuery("");
+    setCommandMenuSelectedIndex(0);
+    setCommandMenuOpen(true);
+  }
+
+  function openFileSearch() {
+    setBaseBranchMenuOpen(false);
+    setProjectContextMenu(null);
+    closeCommandMenu();
+    setFileSearchQuery("");
+    setFileSearchSelectedIndex(0);
+    setFileSearchOpen(true);
+  }
 
   const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -795,53 +913,71 @@ export default function App() {
         )}
       </main>
 
-      {isFileSearchOpen ? (
-        <div
-          className="command-palette-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setFileSearchOpen(false);
-            }
-          }}
-        >
-          <div className="command-palette" role="dialog" aria-modal="true" aria-label="Search files" onMouseDown={(event) => event.stopPropagation()}>
-            <input
-              ref={fileSearchInputRef}
-              className="command-palette-input"
-              value={fileSearchQuery}
-              onChange={(event) => {
-                setFileSearchQuery(event.target.value);
-                setFileSearchSelectedIndex(0);
+      <CommandPaletteDialog
+        open={isCommandMenuOpen}
+        label="Command menu"
+        value={commandMenuQuery}
+        placeholder="Search commands"
+        inputRef={commandMenuInputRef}
+        onClose={closeCommandMenu}
+        onValueChange={(value) => {
+          setCommandMenuQuery(value);
+          setCommandMenuSelectedIndex(0);
+        }}
+      >
+        {filteredCommandMenuItems.length === 0 ? (
+          <p className="command-palette-state">No matching commands.</p>
+        ) : (
+          filteredCommandMenuItems.map((command, index) => (
+            <button
+              key={command.id}
+              className={`command-palette-item ${index === commandMenuSelectedIndex ? "command-palette-item-active" : ""}`}
+              onMouseEnter={() => setCommandMenuSelectedIndex(index)}
+              onClick={() => command.execute()}
+            >
+              <div className="command-palette-item-main">
+                <strong>{command.title}</strong>
+                <p>{command.subtitle}</p>
+              </div>
+            </button>
+          ))
+        )}
+      </CommandPaletteDialog>
+
+      <CommandPaletteDialog
+        open={isFileSearchOpen}
+        label="Search files"
+        value={fileSearchQuery}
+        placeholder="Search files across projects"
+        inputRef={fileSearchInputRef}
+        onClose={closeFileSearch}
+        onValueChange={(value) => {
+          setFileSearchQuery(value);
+          setFileSearchSelectedIndex(0);
+        }}
+      >
+        {fileSearchLoading && fileSearchResults.length === 0 ? (
+          <p className="command-palette-state">Searching...</p>
+        ) : fileSearchResults.length === 0 ? (
+          <p className="command-palette-state">No matching files.</p>
+        ) : (
+          fileSearchResults.map((result, index) => (
+            <button
+              key={`${result.projectId}:${result.sessionId}:${result.filePath}`}
+              className={`command-palette-item ${index === fileSearchSelectedIndex ? "command-palette-item-active" : ""}`}
+              onMouseEnter={() => setFileSearchSelectedIndex(index)}
+              onClick={() => {
+                void applyFileSearchResult(result);
               }}
-              placeholder="Search files across projects"
-              aria-label="Search files"
-            />
-            <div className="command-palette-list">
-              {fileSearchLoading && fileSearchResults.length === 0 ? (
-                <p className="command-palette-state">Searching...</p>
-              ) : fileSearchResults.length === 0 ? (
-                <p className="command-palette-state">No matching files.</p>
-              ) : (
-                fileSearchResults.map((result, index) => (
-                  <button
-                    key={`${result.projectId}:${result.sessionId}:${result.filePath}`}
-                    className={`command-palette-item ${index === fileSearchSelectedIndex ? "command-palette-item-active" : ""}`}
-                    onMouseEnter={() => setFileSearchSelectedIndex(index)}
-                    onClick={() => {
-                      void applyFileSearchResult(result);
-                    }}
-                  >
-                    <div className="command-palette-item-main">
-                      <strong>{result.filePath}</strong>
-                      <p>{result.projectName}</p>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+            >
+              <div className="command-palette-item-main">
+                <strong>{result.filePath}</strong>
+                <p>{result.projectName}</p>
+              </div>
+            </button>
+          ))
+        )}
+      </CommandPaletteDialog>
 
       {error ? (
         <div className="toast">
