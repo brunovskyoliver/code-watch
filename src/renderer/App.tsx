@@ -25,6 +25,7 @@ import {
 } from "@renderer/layout/review-layout";
 import { useAppStore } from "@renderer/store/app-store";
 import type { DiffLine, FileDiff, ThreadAnchor, ThreadPreview } from "@shared/types";
+import { FolderInput } from 'lucide-react';
 
 type DiffRow =
   | { type: "hunk"; id: string; header: string }
@@ -493,7 +494,7 @@ export default function App() {
             </div>
           </div>
           <button className="ghost-button" onClick={() => void addProject()} aria-label="Add repository">
-            +
+                        <FolderInput style={{ paddingTop:"25%"}} />
           </button>
         </div>
 
