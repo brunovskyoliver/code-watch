@@ -496,4 +496,64 @@ describe("OpenCodeAppServerService", () => {
     expect(result.commit?.title).toBe("Use OpenCode for git drafting");
     expect(result.pr).toBeNull();
   });
+
+  it("builds tool-restricted inline config for OpenCode run", async () => {
+    vi.mocked(execFile).mockImplementation((...args) => {
+      const callback = typeof args[2] === "function" ? args[2] : args[3];
+      if (typeof callback === "function") {
+        callback(null, "1.2.20\n", "");
+      }
+      return {} as never;
+    });
+
+    const git = {} as unknown as GitService;
+    const service = new OpenCodeAppServerService(git, vi.fn());
+
+    await service.getStatus();
+
+    const statusCall = vi.mocked(execFile).mock.calls[0];
+    const options = statusCall?.[2];
+    expect(options).toMatchObject({ timeout: 8000 });
+
+    vi.mocked(execFile).mockClear();
+    vi.mocked(execFile).mockImplementation((...args) => {
+      const argsList = args[1] as string[];
+      if (argsList[0] === "--version") {
+        const callback = typeof args[2] === "function" ? args[2] : args[3];
+        if (typeof callback === "function") {
+          callback(null, "1.2.20\n", "");
+        }
+        return {} as never;
+      }
+
+      const optionsArg = typeof args[2] === "object" ? args[2] : undefined;
+      expect(optionsArg).toBeDefined();
+      const env = (optionsArg as { env?: Record<string, string> }).env;
+      expect(env?.OPENCODE_CONFIG_CONTENT).toBeTruthy();
+      const parsed = JSON.parse(env!.OPENCODE_CONFIG_CONTENT!);
+      expect(parsed.share).toBe("disabled");
+      expect(parsed.tools).toMatchObject({
+        bash: false,
+        read: false,
+        edit: false,
+        write: false,
+        grep: false,
+        glob: false
+      });
+
+      const callback = args[3];
+      if (typeof callback === "function") {
+        callback(null, `${JSON.stringify({
+          type: "text",
+          part: { type: "text", text: JSON.stringify({ commit: { title: "x", body: "y" }, pr: null }) }
+        })}\n`, "");
+      }
+      return {} as never;
+    });
+
+    await service.getStatus();
+
+    const runTurn = (service as unknown as { runStructuredTurn: (input: { cwd: string; prompt: string }) => Promise<unknown> }).runStructuredTurn.bind(service);
+    await expect(runTurn({ cwd: "/tmp/code-watch", prompt: "hello" })).rejects.toThrow("did not return assistant text");
+  });
 });
