@@ -16,7 +16,7 @@ import { FileList } from "@renderer/components/file-list";
 import { EmptyState, LoadingState } from "@renderer/components/shared";
 import { ThreadPanel } from "@renderer/components/thread-panel";
 import {
-  createReviewSessionCommandMenuItems,
+  createBranchCommandMenuItems,
   filterCommandMenuItems,
   type CommandMenuItem
 } from "@renderer/command-menu";
@@ -40,7 +40,7 @@ type DiffRow =
 
 type CommandMenuView =
   | { type: "root" }
-  | { type: "switch-session"; projectId: string; projectName: string };
+  | { type: "switch-branch"; projectId: string; projectName: string };
 
 interface FlattenedDiffRows {
   rows: DiffRow[];
@@ -69,7 +69,6 @@ export default function App() {
   const {
     projects,
     baseBranchesByProject,
-    sessionsByProject,
     activeProjectId,
     activeSession,
     files,
@@ -134,7 +133,13 @@ export default function App() {
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
   const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
-  const activeProjectSessions = activeProjectId ? sessionsByProject[activeProjectId] ?? [] : [];
+  const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];
+  const branchPickerProjectId = commandMenuView.type === "switch-branch" ? commandMenuView.projectId : activeProjectId;
+  const branchPickerProject =
+    commandMenuView.type === "switch-branch"
+      ? projects.find((project) => project.id === commandMenuView.projectId) ?? null
+      : activeProject;
+  const branchPickerBranches = branchPickerProjectId ? baseBranchesByProject[branchPickerProjectId] ?? [] : [];
   const baseBranchOptions = useMemo(() => {
     if (!activeProject) {
       return [];
@@ -150,11 +155,11 @@ export default function App() {
       ...(activeProject
         ? [
             {
-              id: "switch-review-session",
-              title: "Switch Review Session",
-              subtitle: `Choose a saved branch for ${activeProject.name}`,
-              keywords: ["branch", "session", "review", "switch"],
-              execute: () => showSessionPicker(activeProject.id, activeProject.name)
+              id: "switch-review-branch",
+              title: "Switch Review Branch",
+              subtitle: `Choose a base branch for ${activeProject.name}`,
+              keywords: ["branch", "base", "review", "switch", "compare"],
+              execute: () => void showBranchPicker(activeProject.id, activeProject.name)
             }
           ]
         : []),
@@ -183,25 +188,34 @@ export default function App() {
       return filterCommandMenuItems(commandMenuItems, commandMenuQuery);
     }
 
+    if (loadingBaseBranches && branchPickerBranches.length === 0) {
+      return [];
+    }
+
     return filterCommandMenuItems(
-      createReviewSessionCommandMenuItems(activeProjectSessions, activeSession?.session.id ?? null),
+      createBranchCommandMenuItems(
+        commandMenuView.projectId,
+        toUniqueBranches(branchPickerBranches, branchPickerProject?.defaultBaseBranch ?? null),
+        branchPickerProject?.defaultBaseBranch ?? null
+      ),
       commandMenuQuery
     ).map((item) => ({
       ...item,
       execute: () => {
         closeCommandMenu();
-        if (item.sessionId !== activeSession?.session.id) {
-          void selectSession(item.projectId, item.sessionId);
+        if (item.branch !== branchPickerProject?.defaultBaseBranch) {
+          void updateBaseBranch(item.projectId, item.branch);
         }
       }
     }));
   }, [
-    activeProjectSessions,
-    activeSession?.session.id,
+    branchPickerBranches,
+    branchPickerProject?.defaultBaseBranch,
     commandMenuItems,
     commandMenuQuery,
-    commandMenuView.type,
-    selectSession
+    commandMenuView,
+    loadingBaseBranches,
+    updateBaseBranch
   ]);
   const effectivePaneOrder = reviewLayout.order;
   const visibleReviewPanes = useMemo(
@@ -515,10 +529,17 @@ export default function App() {
     setCommandMenuSelectedIndex(0);
   }
 
-  function showSessionPicker(projectId: string, projectName: string) {
-    setCommandMenuView({ type: "switch-session", projectId, projectName });
+  async function showBranchPicker(projectId: string, projectName: string) {
+    setCommandMenuView({ type: "switch-branch", projectId, projectName });
     setCommandMenuQuery("");
     setCommandMenuSelectedIndex(0);
+
+    setLoadingBaseBranches(true);
+    try {
+      await listBranches(projectId);
+    } finally {
+      setLoadingBaseBranches(false);
+    }
   }
 
   function closeFileSearch() {
@@ -916,7 +937,16 @@ export default function App() {
                     {activeProject.defaultBaseBranch}
                   </button>
                   {isBaseBranchMenuOpen ? (
-                    <div className="base-branch-menu" role="listbox" aria-label="Branch list">
+                    <div
+                      className="base-branch-menu"
+                      role="listbox"
+                      aria-label="Branch list"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onPointerMove={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                      onWheel={(event) => event.stopPropagation()}
+                    >
                       {loadingBaseBranches ? (
                         <p className="base-branch-menu-state">Loading branches...</p>
                       ) : baseBranchOptions.length > 0 ? (
@@ -976,9 +1006,9 @@ export default function App() {
 
       <CommandPaletteDialog
         open={isCommandMenuOpen}
-        label={commandMenuView.type === "root" ? "Command menu" : "Switch review session"}
+        label={commandMenuView.type === "root" ? "Command menu" : "Switch review branch"}
         value={commandMenuQuery}
-        placeholder={commandMenuView.type === "root" ? "Search commands" : "Search branches and sessions"}
+        placeholder={commandMenuView.type === "root" ? "Search commands" : "Search branches"}
         inputRef={commandMenuInputRef}
         onClose={closeCommandMenu}
         onValueChange={(value) => {
@@ -990,11 +1020,13 @@ export default function App() {
           <p className="command-palette-state">
             {commandMenuView.type === "root"
               ? "No matching commands."
-              : !activeProject
+              : !branchPickerProject
                 ? "No project selected."
-                : activeProjectSessions.length === 0
-                  ? `No saved sessions found for ${activeProject.name}.`
-                  : "No matching sessions."
+                : loadingBaseBranches
+                  ? `Loading branches for ${branchPickerProject.name}...`
+                  : branchPickerBranches.length === 0
+                    ? `No branches found for ${branchPickerProject.name}.`
+                    : "No matching branches."
             }
           </p>
         ) : (
@@ -1277,6 +1309,15 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function clampSidebarWidth(value: number): number {
   return clamp(value, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+}
+
+function toUniqueBranches(branches: string[], preferredBranch: string | null): string[] {
+  const branchSet = new Set(branches);
+  if (preferredBranch) {
+    branchSet.add(preferredBranch);
+  }
+
+  return [...branchSet].sort((a, b) => a.localeCompare(b));
 }
 
 function getPaneMinimumWidth(paneId: ReviewPaneId): number {

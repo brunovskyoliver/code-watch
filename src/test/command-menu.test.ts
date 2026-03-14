@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createReviewSessionCommandMenuItems, filterCommandMenuItems } from "@renderer/command-menu";
+import { createBranchCommandMenuItems, filterCommandMenuItems } from "@renderer/command-menu";
 
 describe("command-menu", () => {
   const items = [
@@ -26,29 +26,24 @@ describe("command-menu", () => {
     expect(filterCommandMenuItems(items, "jump changed")).toEqual([items[0]]);
   });
 
-  it("builds session menu items with active-session metadata", () => {
-    const sessions = [
+  it("builds branch menu items with active-branch metadata", () => {
+    expect(createBranchCommandMenuItems("project_1", ["main", "feature/demo"], "feature/demo")).toEqual([
       {
-        id: "session_live",
+        id: "branch:project_1:main",
         projectId: "project_1",
-        branchName: "feature/demo",
-        baseBranch: "main",
-        headSha: "abcdef123456",
-        baseSha: "base_sha",
-        mergeBaseSha: "merge_sha",
-        createdAt: 1,
-        lastOpenedAt: 1
-      }
-    ] as const;
-
-    expect(createReviewSessionCommandMenuItems(sessions, "session_live")).toEqual([
+        branch: "main",
+        title: "main",
+        subtitle: "Switch review to this base branch",
+        keywords: ["main"],
+        active: false
+      },
       {
-        id: "review-session:session_live",
+        id: "branch:project_1:feature/demo",
         projectId: "project_1",
-        sessionId: "session_live",
+        branch: "feature/demo",
         title: "feature/demo",
-        subtitle: "abcdef1 · base main · current",
-        keywords: ["feature/demo", "main", "abcdef123456"],
+        subtitle: "Current base branch",
+        keywords: ["feature", "demo"],
         active: true
       }
     ]);
