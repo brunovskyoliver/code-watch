@@ -59,7 +59,7 @@ async function bootstrap(): Promise<void> {
   const search = new FileSearchService(db);
   const reviews = new ReviewService(db, git, broadcast);
   const threads = new ThreadService(db);
-  const settings = new SettingsService(keybindingsPath);
+  const settings = new SettingsService(db, keybindingsPath);
   const codex = new CodexAppServerService(git, broadcast);
   const opencode = new OpenCodeAppServerService(git, broadcast);
   const watchers = new RepoWatcherRegistry(git, broadcast);

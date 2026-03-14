@@ -66,3 +66,8 @@ export const commentsTable = sqliteTable("comments", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull()
 });
+
+export const settingsTable = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull()
+});

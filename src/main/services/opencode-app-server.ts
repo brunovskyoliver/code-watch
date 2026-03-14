@@ -12,6 +12,7 @@ import type {
 
 const OPENCODE_VERSION_TIMEOUT_MS = 8_000;
 const DEFAULT_OPENCODE_RUN_TIMEOUT_MS = 180_000;
+const DEFAULT_OPENCODE_MODEL = "github-copilot/gemini-3-flash-preview";
 
 function resolveOpenCodeRunTimeoutMs(): number {
   const raw = process.env.OPENCODE_RUN_TIMEOUT_MS;
@@ -50,6 +51,7 @@ export class OpenCodeAppServerService extends CodexAppServerService {
         windowsHide: true
       });
       const version = stdout.trim() || "unknown";
+      const preferredModel = await this.resolvePreferredModel();
       return { available: true, version, reason: null };
     } catch (error) {
       return {
@@ -62,11 +64,12 @@ export class OpenCodeAppServerService extends CodexAppServerService {
 
   protected override async runStructuredTurn(input: { cwd: string; prompt: string }): Promise<unknown> {
     const args = ["run", "--format", "json"];
-    if (this.model) {
-      args.push("--model", this.model);
+    const model = await this.resolvePreferredModel();
+    if (model) {
+      args.push("--model", model);
     }
     args.push("--dir", input.cwd, input.prompt);
-    const env = buildOpenCodeEnvironment(process.env, this.model);
+    const env = buildOpenCodeEnvironment(process.env, model);
 
     if (process.env.OPENCODE_DEBUG === "1") {
       return this.runStructuredTurnStreaming(args, env);
@@ -191,6 +194,30 @@ export class OpenCodeAppServerService extends CodexAppServerService {
         }
       });
     });
+  }
+
+  private async resolvePreferredModel(): Promise<string | null> {
+    if (this.model) {
+      return this.model;
+    }
+
+    try {
+      const { stdout } = await promisify(this.runExecFile)("opencode", ["models", "--refresh"], {
+        timeout: 30_000,
+        windowsHide: true,
+        maxBuffer: 2 * 1024 * 1024
+      });
+      const models = stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.includes("/"));
+      if (models.includes(DEFAULT_OPENCODE_MODEL)) {
+        return DEFAULT_OPENCODE_MODEL;
+      }
+    } catch {
+    }
+
+    return null;
   }
 }
 
