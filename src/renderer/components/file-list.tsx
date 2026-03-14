@@ -20,7 +20,7 @@ export function FileList({
   });
 
   return (
-    <div ref={parentRef} className="virtual-scroll">
+    <div ref={parentRef} className="virtual-scroll file-list-scroll">
       <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const file = files[virtualRow.index];
