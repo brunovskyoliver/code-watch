@@ -29,7 +29,6 @@ function resolveOpenCodeRunTimeoutMs(): number {
 }
 
 export class OpenCodeAppServerService extends CodexAppServerService {
-  private readonly runExecFile: typeof execFile;
   private readonly runTimeoutMs: number;
   private readonly model: string | null;
 
@@ -39,19 +38,17 @@ export class OpenCodeAppServerService extends CodexAppServerService {
       assistantLabel: "OpenCode",
       logPrefix: "opencode"
     });
-    this.runExecFile = execFile;
     this.runTimeoutMs = resolveOpenCodeRunTimeoutMs();
     this.model = process.env.OPENCODE_MODEL?.trim() || null;
   }
 
   override async getStatus(): Promise<{ available: boolean; version: string | null; reason: string | null }> {
     try {
-      const { stdout } = await promisify(this.runExecFile)("opencode", ["--version"], {
+      const { stdout } = await promisify(execFile)("opencode", ["--version"], {
         timeout: OPENCODE_VERSION_TIMEOUT_MS,
         windowsHide: true
       });
       const version = stdout.trim() || "unknown";
-      const preferredModel = await this.resolvePreferredModel();
       return { available: true, version, reason: null };
     } catch (error) {
       return {
@@ -71,43 +68,7 @@ export class OpenCodeAppServerService extends CodexAppServerService {
     args.push("--dir", input.cwd, input.prompt);
     const env = buildOpenCodeEnvironment(process.env, model);
 
-    if (process.env.OPENCODE_DEBUG === "1") {
-      return this.runStructuredTurnStreaming(args, env);
-    }
-
-    let stdout: string;
-    try {
-      const result = await promisify(this.runExecFile)("opencode", args, {
-        env,
-        timeout: this.runTimeoutMs,
-        windowsHide: true,
-        maxBuffer: 8 * 1024 * 1024
-      });
-      stdout = typeof result.stdout === "string" ? result.stdout : String(result.stdout ?? "");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown OpenCode error";
-      const stderr = getErrorText(error, "stderr");
-      if (typeof message === "string" && message.toLowerCase().includes("timed out")) {
-        throw new Error(
-          `OpenCode run timed out after ${Math.round(this.runTimeoutMs / 1000)}s while drafting. ` +
-          "Run `opencode auth list` to confirm provider auth, and test `opencode run --format json \"hello\"` in the same repo." +
-          (stderr ? ` OpenCode stderr: ${stderr}` : "")
-        );
-      }
-      throw new Error(`OpenCode run failed: ${message}${stderr ? ` | stderr: ${stderr}` : ""}`);
-    }
-
-    const text = extractOpenCodeText(stdout);
-    if (!text) {
-      throw new Error("OpenCode run did not return assistant text.");
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown parse error";
-      throw new Error(`OpenCode returned invalid JSON: ${message}`);
-    }
+    return this.runStructuredTurnStreaming(args, env);
   }
 
   override async draftGitArtifacts(input: {
@@ -151,13 +112,17 @@ export class OpenCodeAppServerService extends CodexAppServerService {
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
         stdout += chunk;
-        log.info("[opencode] run:stdout", compactText(chunk));
+        if (process.env.OPENCODE_DEBUG === "1") {
+          log.info("[opencode] run:stdout", compactText(chunk));
+        }
       });
 
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk: string) => {
         stderr += chunk;
-        log.warn("[opencode] run:stderr", compactText(chunk));
+        if (process.env.OPENCODE_DEBUG === "1") {
+          log.warn("[opencode] run:stderr", compactText(chunk));
+        }
       });
 
       child.once("error", (error) => {
@@ -202,7 +167,7 @@ export class OpenCodeAppServerService extends CodexAppServerService {
     }
 
     try {
-      const { stdout } = await promisify(this.runExecFile)("opencode", ["models", "--refresh"], {
+      const { stdout } = await promisify(execFile)("opencode", ["models", "--refresh"], {
         timeout: 30_000,
         windowsHide: true,
         maxBuffer: 2 * 1024 * 1024
