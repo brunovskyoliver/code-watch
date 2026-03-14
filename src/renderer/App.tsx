@@ -51,6 +51,14 @@ import {
   MenuTrigger
 } from "@renderer/components/ui/menu";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@renderer/components/ui/dropdown-menu";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogDescription,
@@ -63,7 +71,18 @@ import { matchesKeybinding } from "@renderer/keybindings";
 import { useAppStore } from "@renderer/store/app-store";
 import { DEFAULT_KEYBINDINGS, type Keybinding } from "@shared/keybindings";
 import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
-import { FolderInput, Files, FileDiff as FDiff, NotebookPen, Settings, X } from 'lucide-react';
+import {
+  ChevronDown,
+  CloudUpload,
+  Files,
+  FileDiff as FDiff,
+  FolderInput,
+  Github,
+  GitCommitHorizontal,
+  NotebookPen,
+  Settings,
+  X
+} from "lucide-react";
 import { PinList } from "./components/pin-list";
 
 type DiffRow =
@@ -92,6 +111,7 @@ const FILE_SEARCH_LIMIT = 5;
 const FILE_SEARCH_DEBOUNCE_MS = 120;
 const SETTINGS_MENU_LABEL = "Settings";
 const NO_SUPPORTED_EDITOR_ERROR = "No supported editor found. Install Visual Studio Code or Cursor.";
+const GIT_ACTIONS_NOT_AVAILABLE_ERROR = "Git automation is coming soon. Run commit, push, and PR commands in your terminal for now.";
 
 const keybindingShortcutFallbacks: Record<string, string> = {
   "command-menu.open": "mod+/",
@@ -193,7 +213,9 @@ export default function App() {
   const [fileSearchSelectedIndex, setFileSearchSelectedIndex] = useState(0);
   const [keybindings, setKeybindings] = useState<Keybinding[]>(DEFAULT_KEYBINDINGS);
   const [isUnsupportedEditorDialogOpen, setUnsupportedEditorDialogOpen] = useState(false);
+  const [gitActionsMenuWidth, setGitActionsMenuWidth] = useState(180);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
+  const gitActionsControlRef = useRef<HTMLDivElement | null>(null);
   const sidebarHeaderRef = useRef<HTMLDivElement | null>(null);
   const sidebarTitleRef = useRef<HTMLDivElement | null>(null);
   const sidebarAddRepoButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -204,6 +226,8 @@ export default function App() {
   const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
   const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const hasUncommittedChanges = activeSession?.dirty ?? false;
+  const gitPrimaryLabel = hasUncommittedChanges ? "Commit & PR" : "Push & Create PR";
   const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];
   const branchPickerProjectId = commandMenuView.type === "switch-branch" ? commandMenuView.projectId : activeProjectId;
   const branchPickerProject =
@@ -385,6 +409,28 @@ export default function App() {
       window.removeEventListener("resize", measureSidebarMinimumWidth);
     };
   }, []);
+
+  useLayoutEffect(() => {
+    const gitActionsControl = gitActionsControlRef.current;
+    if (!gitActionsControl) {
+      return;
+    }
+
+    const measureWidth = () => {
+      setGitActionsMenuWidth(Math.ceil(gitActionsControl.getBoundingClientRect().width));
+    };
+
+    measureWidth();
+
+    const resizeObserver = new ResizeObserver(measureWidth);
+    resizeObserver.observe(gitActionsControl);
+    window.addEventListener("resize", measureWidth);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", measureWidth);
+    };
+  }, [gitPrimaryLabel]);
 
   useEffect(() => {
     setSidebarWidth((previousWidth) => clampSidebarWidth(previousWidth, sidebarMinWidth));
@@ -758,6 +804,18 @@ export default function App() {
   function setUiError(error: unknown, fallbackMessage: string) {
     const message = error instanceof Error ? error.message : fallbackMessage;
     useAppStore.setState({ error: message });
+  }
+
+  async function runGitPrimaryAction() {
+    setUiError(new Error(GIT_ACTIONS_NOT_AVAILABLE_ERROR), GIT_ACTIONS_NOT_AVAILABLE_ERROR);
+  }
+
+  async function runSingleGitAction(action: "commit" | "push" | "pr") {
+    const actionLabel = action === "pr" ? "Create PR" : action.charAt(0).toUpperCase() + action.slice(1);
+    setUiError(
+      new Error(`${actionLabel} is not wired yet. ${GIT_ACTIONS_NOT_AVAILABLE_ERROR}`),
+      `${actionLabel} is not wired yet.`
+    );
   }
 
   const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1270,6 +1328,60 @@ export default function App() {
 
             {activeSession && activeProject ? (
               <div className="topbar-actions">
+                <div ref={gitActionsControlRef} className="git-actions-control" role="group" aria-label="Git actions">
+                  <button type="button" className="git-action-primary" onClick={() => void runGitPrimaryAction()}>
+                    <Github className="git-action-icon" />
+                    <span>{gitPrimaryLabel}</span>
+                  </button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      type="button"
+                      className="git-action-trigger"
+                      aria-label="Open git action menu"
+                    >
+                      <ChevronDown className="git-action-chevron" />
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent
+                      sideOffset={6}
+                      align="end"
+                      style={{ "--git-actions-width": `${gitActionsMenuWidth}px` } as CSSProperties}
+                    >
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem
+                          disabled={!hasUncommittedChanges}
+                          onClick={() => void runSingleGitAction("commit")}
+                        >
+                          <span className="git-action-menu-item-main">
+                            <GitCommitHorizontal className="git-action-menu-icon" />
+                            <span>Commit</span>
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={hasUncommittedChanges}
+                          onClick={() => void runSingleGitAction("push")}
+                        >
+                          <span className="git-action-menu-item-main">
+                            <CloudUpload className="git-action-menu-icon" />
+                            <span>Push</span>
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          disabled={hasUncommittedChanges}
+                          onClick={() => void runSingleGitAction("pr")}
+                        >
+                          <span className="git-action-menu-item-main">
+                            <Github className="git-action-menu-icon" />
+                            <span>Create PR</span>
+                          </span>
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
                 <div className="pane-toolbar" role="toolbar" aria-label="Toggle review panes">
                   <button
                     type="button"
