@@ -1,10 +1,11 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { z } from "zod";
 import type { ProjectService } from "@main/services/projects";
+import type { FileSearchService } from "@main/services/file-search";
 import type { ReviewService } from "@main/services/reviews";
 import type { ThreadService } from "@main/services/threads";
 import type { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
-import { threadAnchorSchema } from "@shared/types";
+import { fileSearchResultSchema, threadAnchorSchema } from "@shared/types";
 
 export function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -14,6 +15,7 @@ export function broadcast(channel: string, payload: unknown): void {
 
 export function registerIpcHandlers(services: {
   projects: ProjectService;
+  search: FileSearchService;
   reviews: ReviewService;
   threads: ThreadService;
   watchers: RepoWatcherRegistry;
@@ -71,4 +73,12 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("threads:reopen", async (_event, threadId: string) =>
     services.threads.reopen(z.string().min(1).parse(threadId))
   );
+
+  ipcMain.handle("search:files", async (_event, query: string, limit?: number) => {
+    const results = await services.search.files(
+      z.string().max(200).parse(query),
+      limit === undefined ? undefined : z.number().int().min(1).max(20).parse(limit)
+    );
+    return z.array(fileSearchResultSchema).parse(results);
+  });
 }

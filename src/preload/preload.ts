@@ -31,6 +31,9 @@ const api: CodeWatchApi = {
     resolve: (threadId) => ipcRenderer.invoke("threads:resolve", threadId),
     reopen: (threadId) => ipcRenderer.invoke("threads:reopen", threadId)
   },
+  search: {
+    files: (query, limit) => ipcRenderer.invoke("search:files", query, limit)
+  },
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.changed", listener),
     onBranchChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.branchChanged", listener),
