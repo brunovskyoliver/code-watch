@@ -254,6 +254,54 @@ textarea,
   width: 100%;
 }
 
+.cw-menu-positioner {
+  z-index: 120;
+}
+
+.cw-menu-panel {
+  min-width: 220px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(17, 19, 23, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  backdrop-filter: blur(14px);
+}
+
+.cw-menu-item {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+}
+
+.cw-menu-item:hover,
+.cw-menu-item[data-highlighted] {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cw-menu-item[data-disabled] {
+  color: var(--muted);
+}
+
+.cw-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.cw-menu-shortcut {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .project-copy {
   display: flex;
   align-items: center;
@@ -1059,6 +1107,10 @@ h4 {
   border: 0;
   border-radius: 10px;
   padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   text-align: left;
   color: inherit;
   background: transparent;
@@ -1086,6 +1138,12 @@ h4 {
 
 .command-palette-item-main p {
   margin: 0;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.command-palette-shortcut {
   flex-shrink: 0;
   color: var(--muted);
   font-size: 11px;

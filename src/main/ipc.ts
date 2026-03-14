@@ -3,9 +3,11 @@ import { z } from "zod";
 import type { ProjectService } from "@main/services/projects";
 import type { FileSearchService } from "@main/services/file-search";
 import type { ReviewService } from "@main/services/reviews";
+import type { SettingsService } from "@main/services/settings";
 import type { ThreadService } from "@main/services/threads";
 import type { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
 import { fileSearchResultSchema, threadAnchorSchema } from "@shared/types";
+import { keybindingsSchema } from "@shared/keybindings";
 
 export function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -18,6 +20,7 @@ export function registerIpcHandlers(services: {
   search: FileSearchService;
   reviews: ReviewService;
   threads: ThreadService;
+  settings: SettingsService;
   watchers: RepoWatcherRegistry;
 }): void {
   ipcMain.handle("projects:pickDirectory", async () => services.projects.pickDirectory());
@@ -88,5 +91,15 @@ export function registerIpcHandlers(services: {
       limit === undefined ? undefined : z.number().int().min(1).max(20).parse(limit)
     );
     return z.array(fileSearchResultSchema).parse(results);
+  });
+
+  ipcMain.handle("settings:loadKeybindings", async () => keybindingsSchema.parse(await services.settings.loadKeybindings()));
+
+  ipcMain.handle("settings:openKeybindingsInEditor", async () => {
+    await services.settings.openKeybindingsInEditor();
+  });
+
+  ipcMain.handle("settings:reset", async () => {
+    await services.settings.reset();
   });
 }

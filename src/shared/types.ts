@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { keybindingsSchema } from "@shared/keybindings";
 
 export const threadStatusSchema = z.enum(["open", "resolved"]);
 export const threadSideSchema = z.enum(["old", "new"]);
@@ -202,6 +203,11 @@ export interface CodeWatchApi {
   };
   search: {
     files: (query: string, limit?: number) => Promise<FileSearchResult[]>;
+  };
+  settings: {
+    loadKeybindings: () => Promise<z.infer<typeof keybindingsSchema>>;
+    openKeybindingsInEditor: () => Promise<void>;
+    reset: () => Promise<void>;
   };
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => () => void;
