@@ -5,8 +5,18 @@ import type { FileSearchService } from "@main/services/file-search";
 import type { ReviewService } from "@main/services/reviews";
 import type { SettingsService } from "@main/services/settings";
 import type { ThreadService } from "@main/services/threads";
+import type { CodexAppServerService } from "@main/services/codex-app-server";
 import type { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
-import { fileSearchResultSchema, threadAnchorSchema } from "@shared/types";
+import {
+  changeSourceSchema,
+  codexStatusSchema,
+  fileSearchResultSchema,
+  gitDraftActionSchema,
+  gitDraftResultSchema,
+  gitRunActionSchema,
+  gitRunResultSchema,
+  threadAnchorSchema
+} from "@shared/types";
 import { keybindingsSchema } from "@shared/keybindings";
 
 export function broadcast(channel: string, payload: unknown): void {
@@ -21,6 +31,7 @@ export function registerIpcHandlers(services: {
   reviews: ReviewService;
   threads: ThreadService;
   settings: SettingsService;
+  codex: CodexAppServerService;
   watchers: RepoWatcherRegistry;
 }): void {
   ipcMain.handle("projects:pickDirectory", async () => services.projects.pickDirectory());
@@ -62,8 +73,12 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("reviews:list", async (_event, projectId: string) => services.reviews.list(z.string().min(1).parse(projectId)));
   ipcMain.handle("reviews:load", async (_event, sessionId: string) => services.reviews.load(z.string().min(1).parse(sessionId)));
   ipcMain.handle("reviews:files", async (_event, sessionId: string) => services.reviews.files(z.string().min(1).parse(sessionId)));
-  ipcMain.handle("reviews:diff", async (_event, sessionId: string, filePath: string) =>
-    services.reviews.diff(z.string().min(1).parse(sessionId), z.string().min(1).parse(filePath))
+  ipcMain.handle("reviews:diff", async (_event, sessionId: string, filePath: string, source?: unknown) =>
+    services.reviews.diff(
+      z.string().min(1).parse(sessionId),
+      z.string().min(1).parse(filePath),
+      source === undefined ? "committed" : changeSourceSchema.parse(source)
+    )
   );
 
   ipcMain.handle("threads:listForFile", async (_event, sessionId: string, filePath: string) =>
@@ -101,5 +116,34 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("settings:reset", async () => {
     await services.settings.reset();
+  });
+
+  ipcMain.handle("assistants:codexStatus", async () => codexStatusSchema.parse(await services.codex.getStatus()));
+
+  ipcMain.handle("assistants:draftGitArtifacts", async (_event, sessionId: string, action: unknown) => {
+    const detail = await services.reviews.load(z.string().min(1).parse(sessionId));
+    const files = await services.reviews.files(detail.session.id);
+    const parsedAction = gitDraftActionSchema.parse(action);
+    const result = await services.codex.draftGitArtifacts({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: parsedAction
+    });
+
+    return gitDraftResultSchema.parse(result);
+  });
+
+  ipcMain.handle("assistants:runGitAction", async (_event, sessionId: string, action: unknown) => {
+    const detail = await services.reviews.load(z.string().min(1).parse(sessionId));
+    const files = await services.reviews.files(detail.session.id);
+    const result = await services.codex.runGitAction({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: gitRunActionSchema.parse(action)
+    });
+
+    return gitRunResultSchema.parse(result);
   });
 }

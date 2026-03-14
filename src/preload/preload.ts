@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CodeWatchApi, RepoStateEvent, ReviewSessionEvent } from "@shared/types";
+import type { CodeWatchApi, GitWorkflowEvent, RepoStateEvent, ReviewSessionEvent } from "@shared/types";
 
 function bindEvent<T>(channel: string, listener: (payload: T) => void): () => void {
   const wrapped = (_event: Electron.IpcRendererEvent, payload: T) => listener(payload);
@@ -23,7 +23,7 @@ const api: CodeWatchApi = {
     list: (projectId) => ipcRenderer.invoke("reviews:list", projectId),
     load: (sessionId) => ipcRenderer.invoke("reviews:load", sessionId),
     files: (sessionId) => ipcRenderer.invoke("reviews:files", sessionId),
-    diff: (sessionId, filePath, cursor) => ipcRenderer.invoke("reviews:diff", sessionId, filePath, cursor)
+    diff: (sessionId, filePath, source) => ipcRenderer.invoke("reviews:diff", sessionId, filePath, source)
   },
   threads: {
     listForFile: (sessionId, filePath) => ipcRenderer.invoke("threads:listForFile", sessionId, filePath),
@@ -41,12 +41,19 @@ const api: CodeWatchApi = {
     openKeybindingsInEditor: () => ipcRenderer.invoke("settings:openKeybindingsInEditor"),
     reset: () => ipcRenderer.invoke("settings:reset")
   },
+  assistants: {
+    codexStatus: () => ipcRenderer.invoke("assistants:codexStatus"),
+    draftGitArtifacts: (sessionId, action) => ipcRenderer.invoke("assistants:draftGitArtifacts", sessionId, action),
+    runGitAction: (sessionId, action) => ipcRenderer.invoke("assistants:runGitAction", sessionId, action)
+  },
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.changed", listener),
     onBranchChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.branchChanged", listener),
     onDirtyStateChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.dirtyStateChanged", listener),
     onReviewSessionCreated: (listener: (payload: ReviewSessionEvent) => void) =>
-      bindEvent("review.sessionCreated", listener)
+      bindEvent("review.sessionCreated", listener),
+    onGitWorkflowProgress: (listener: (payload: GitWorkflowEvent) => void) =>
+      bindEvent("git.workflowProgress", listener)
   }
 };
 

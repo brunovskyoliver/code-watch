@@ -1,0 +1,335 @@
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn()
+}));
+
+import { spawn } from "node:child_process";
+import { CodexAppServerService } from "@main/services/codex-app-server";
+import type { GitService } from "@main/services/git";
+import type { ChangedFile, ReviewSessionDetail } from "@shared/types";
+
+function createMockChild() {
+  const process = new EventEmitter() as EventEmitter & {
+    stdin: PassThrough;
+    stdout: PassThrough;
+    stderr: PassThrough;
+    kill: () => void;
+  };
+  process.stdin = new PassThrough();
+  process.stdout = new PassThrough();
+  process.stderr = new PassThrough();
+  process.kill = vi.fn(() => {
+    process.emit("close", 0);
+  });
+  return process;
+}
+
+const detail: ReviewSessionDetail = {
+  session: {
+    id: "session_1",
+    projectId: "project_1",
+    branchName: "feature/drafts",
+    baseBranch: "main",
+    headSha: "head_sha",
+    baseSha: "base_sha",
+    mergeBaseSha: "merge_base_sha",
+    createdAt: 1,
+    lastOpenedAt: 1
+  },
+  project: {
+    id: "project_1",
+    name: "Code Watch",
+    repoPath: "/tmp/code-watch",
+    defaultBaseBranch: "main",
+    sortOrder: 1,
+    isPinned: false,
+    createdAt: 1,
+    lastOpenedAt: 1,
+    currentBranch: "feature/drafts",
+    headSha: "head_sha",
+    dirty: true
+  },
+  dirty: true
+};
+
+const files: ChangedFile[] = [
+  {
+    id: "file_1",
+    sessionId: "session_1",
+    source: "working-tree",
+    filePath: "src/renderer/App.tsx",
+    oldPath: "src/renderer/App.tsx",
+    newPath: "src/renderer/App.tsx",
+    status: "modified",
+    additions: 12,
+    deletions: 4,
+    isBinary: false
+  }
+];
+
+describe("CodexAppServerService", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("drafts commit and PR text through codex app-server", async () => {
+    const spawnMock = vi.mocked(spawn);
+    const seenPrompts: string[] = [];
+
+    spawnMock.mockImplementation(() => {
+      const child = createMockChild();
+      let lineBuffer = "";
+      let turnCounter = 0;
+
+      child.stdin.on("data", (chunk: Buffer | string) => {
+        lineBuffer += chunk.toString("utf8");
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            continue;
+          }
+
+          const message = JSON.parse(line) as { id?: number; method?: string; params?: { input?: Array<{ text?: string }> } };
+          if (message.method === "initialize" && message.id) {
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { serverInfo: { version: "1.2.3" } }
+            })}\n`);
+            continue;
+          }
+
+          if (message.method === "thread/start" && message.id) {
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { thread: { id: "thread_1" } }
+            })}\n`);
+            continue;
+          }
+
+          if (message.method === "turn/start" && message.id) {
+            turnCounter += 1;
+            seenPrompts.push(message.params?.input?.[0]?.text ?? "");
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { turn: { id: `turn_${turnCounter}` } }
+            })}\n`);
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              method: "item/completed",
+              params: {
+                item: {
+                  turnId: `turn_${turnCounter}`,
+                  text: JSON.stringify({
+                    commit: {
+                      title: "Add Codex draft generation",
+                      body: "Wire the topbar actions to the Codex app-server."
+                    },
+                    pr: {
+                      title: "Add Codex git draft generation",
+                      body: "## Summary\n- wire commit and PR drafting\n\n## Testing\n- bun run test"
+                    }
+                  })
+                }
+              }
+            })}\n`);
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              method: "turn/completed",
+              params: {
+                threadId: "thread_1",
+                turn: {
+                  id: `turn_${turnCounter}`,
+                  items: [],
+                  status: "completed",
+                  error: null
+                }
+              }
+            })}\n`);
+          }
+        }
+      });
+
+      return child as never;
+    });
+
+    const git = {
+      stagePaths: vi.fn(async () => undefined),
+      getCommitSubjects: vi.fn(async () => ["Add draft shell"]),
+      getDiffStat: vi.fn(async () => " App.tsx | 16 ++++++++++++----"),
+      getCombinedDiff: vi.fn(async () => "diff --git a/App.tsx b/App.tsx\n+draft"),
+      getWorkingTreeSnapshot: vi.fn(async () => ({
+        status: " M src/renderer/App.tsx",
+        stagedStat: "",
+        unstagedStat: " App.tsx | 3 ++-",
+        stagedDiff: "",
+        unstagedDiff: "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+draft"
+      }))
+    } as unknown as GitService;
+
+    const service = new CodexAppServerService(git, vi.fn());
+    const result = await service.draftGitArtifacts({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: "commit-and-pr"
+    });
+
+    expect(result.commit?.title).toBe("Add Codex draft generation");
+    expect(result.pr?.title).toBe("Add Codex git draft generation");
+    expect(result.warning).toContain("Commit drafts include current staged and unstaged changes");
+    expect(seenPrompts).toHaveLength(1);
+    expect(seenPrompts[0]).toContain("Requested action: commit-and-pr");
+    expect(seenPrompts[0]).toContain("src/renderer/App.tsx");
+    expect(seenPrompts[0]).toContain("Commit draft context: current working tree");
+    expect(git.stagePaths).toHaveBeenCalledWith(detail.project.repoPath, ["src/renderer/App.tsx"]);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("stages, commits, and pushes when requested", async () => {
+    const spawnMock = vi.mocked(spawn);
+
+    spawnMock.mockImplementation(() => {
+      const child = createMockChild();
+      let lineBuffer = "";
+      let turnCounter = 0;
+
+      child.stdin.on("data", (chunk: Buffer | string) => {
+        lineBuffer += chunk.toString("utf8");
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            continue;
+          }
+
+          const message = JSON.parse(line) as { id?: number; method?: string; params?: { input?: Array<{ text?: string }> } };
+          if (message.method === "initialize" && message.id) {
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { serverInfo: { version: "1.2.3" } }
+            })}\n`);
+            continue;
+          }
+
+          if (message.method === "thread/start" && message.id) {
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { thread: { id: "thread_1" } }
+            })}\n`);
+            continue;
+          }
+
+          if (message.method === "turn/start" && message.id) {
+            turnCounter += 1;
+            const prompt = message.params?.input?.[0]?.text ?? "";
+            const responseBody = prompt.includes("Requested action: pr")
+              ? {
+                commit: null,
+                pr: {
+                  title: "Ship git automation",
+                  body: "## Summary\n- create the PR after pushing\n\n## Testing\n- bun run test"
+                }
+              }
+              : {
+                commit: {
+                  title: "Ship git automation",
+                  body: "Stage reviewed files and push the branch."
+                },
+                pr: null
+              };
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { turn: { id: `turn_${turnCounter}` } }
+            })}\n`);
+            child.stdout.write(`${JSON.stringify({
+              jsonrpc: "2.0",
+              method: "turn/completed",
+              params: {
+                turnId: `turn_${turnCounter}`,
+                items: [
+                  {
+                    item: {
+                      type: "agentMessage",
+                      text: JSON.stringify(responseBody)
+                    }
+                  }
+                ]
+              }
+            })}\n`);
+          }
+        }
+      });
+
+      return child as never;
+    });
+
+    const git = {
+      stagePaths: vi.fn(async () => undefined),
+      getRepoState: vi.fn(async () => ({
+        rootPath: detail.project.repoPath,
+        currentBranch: detail.session.branchName,
+        headSha: "head_after_push",
+        dirty: false
+      })),
+      getCommitSha: vi.fn(async () => detail.session.baseSha),
+      getMergeBase: vi.fn(async () => detail.session.mergeBaseSha),
+      getChangedFiles: vi.fn(async () => [
+        {
+          ...files[0]!,
+          id: "committed_file_1",
+          source: "committed" as const
+        }
+      ]),
+      getCommitSubjects: vi.fn(async () => ["Ship git automation"]),
+      getDiffStat: vi.fn(async () => " App.tsx | 10 +++++-----"),
+      getCombinedDiff: vi.fn(async () => "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+push"),
+      getWorkingTreeSnapshot: vi.fn(async () => ({
+        status: " M src/renderer/App.tsx",
+        stagedStat: "",
+        unstagedStat: " App.tsx | 10 +++++-----",
+        stagedDiff: "",
+        unstagedDiff: "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+push"
+      })),
+      commit: vi.fn(async () => undefined),
+      pushHead: vi.fn(async () => undefined),
+      createPullRequest: vi.fn(async () => "https://github.com/openai/code-watch/pull/12")
+    } as unknown as GitService;
+
+    const service = new CodexAppServerService(git, vi.fn());
+    const result = await service.runGitAction({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: "push"
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.pushed).toBe(true);
+    expect(result.prUrl).toBe("https://github.com/openai/code-watch/pull/12");
+    expect(result.commitTitle).toBe("Ship git automation");
+    expect(git.stagePaths).toHaveBeenCalledWith(detail.project.repoPath, ["src/renderer/App.tsx"]);
+    expect(git.commit).toHaveBeenCalledWith(
+      detail.project.repoPath,
+      "Ship git automation",
+      "Stage reviewed files and push the branch."
+    );
+    expect(git.pushHead).toHaveBeenCalledWith(detail.project.repoPath);
+    expect(git.createPullRequest).toHaveBeenCalledWith(
+      detail.project.repoPath,
+      expect.any(String),
+      expect.any(String)
+    );
+  });
+});

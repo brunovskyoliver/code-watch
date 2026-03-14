@@ -4,12 +4,12 @@ import type { ChangedFile } from "@shared/types";
 
 export function FileList({
   files,
-  selectedFilePath,
+  selectedFileId,
   onSelect
 }: {
   files: ChangedFile[];
-  selectedFilePath: string | null;
-  onSelect: (filePath: string) => Promise<void>;
+  selectedFileId: string | null;
+  onSelect: (fileId: string) => Promise<void>;
 }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
@@ -31,22 +31,23 @@ export function FileList({
           return (
             <button
               key={file.id}
-              className={`file-row ${selectedFilePath === file.filePath ? "file-row-active" : ""}`}
+              className={`file-row ${selectedFileId === file.id ? "file-row-active" : ""}`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
               draggable
               onDragStart={(event) => {
-                event.dataTransfer.setData("application/vnd.code-watch.file", file.filePath);
+                event.dataTransfer.setData("application/vnd.code-watch.file", file.id);
                 event.dataTransfer.effectAllowed = "copyMove";
               }}
               onClick={() => {
                 startTransition(() => {
-                  void onSelect(file.filePath);
+                  void onSelect(file.id);
                 });
               }}
             >
               <div className="file-row-main">
                 <strong>{file.filePath}</strong>
                 <p>
+                  {file.source === "working-tree" ? "working tree · " : "committed · "}
                   {file.status}
                   {file.isBinary ? " · binary" : ""}
                 </p>

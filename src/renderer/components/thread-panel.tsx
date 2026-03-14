@@ -9,6 +9,7 @@ type ThreadListItem =
 
 export function ThreadPanel({
   filePath,
+  threadEnabled,
   threadPreviews,
   activeThread,
   activeThreadPreview,
@@ -23,6 +24,7 @@ export function ThreadPanel({
   onCancelComposer
 }: {
   filePath: string | null;
+  threadEnabled: boolean;
   threadPreviews: ThreadPreview[];
   activeThread: PaginatedComments | null;
   activeThreadPreview: ThreadPreview | null;
@@ -104,6 +106,8 @@ export function ThreadPanel({
     <Fragment>
       {!filePath ? (
         <EmptyState title="Select a file" body="Thread previews appear once a changed file is selected." />
+      ) : !threadEnabled ? (
+        <EmptyState title="Threads unavailable" body="Working-tree diffs are read-only previews and do not support threads." />
       ) : (
         <div className="thread-layout">
           <div ref={listRef} className="virtual-scroll thread-list-scroll">

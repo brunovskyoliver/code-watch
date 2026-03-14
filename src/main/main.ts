@@ -5,6 +5,7 @@ import { configureAppDataPaths } from "@main/app-paths";
 import { createDatabase } from "@main/db/client";
 import { registerIpcHandlers, broadcast } from "@main/ipc";
 import { FileSearchService } from "@main/services/file-search";
+import { CodexAppServerService } from "@main/services/codex-app-server";
 import { GitService } from "@main/services/git";
 import { ProjectService } from "@main/services/projects";
 import { ReviewService } from "@main/services/reviews";
@@ -58,9 +59,10 @@ async function bootstrap(): Promise<void> {
   const reviews = new ReviewService(db, git, broadcast);
   const threads = new ThreadService(db);
   const settings = new SettingsService(keybindingsPath);
+  const codex = new CodexAppServerService(git, broadcast);
   const watchers = new RepoWatcherRegistry(git, broadcast);
 
-  registerIpcHandlers({ projects, search, reviews, threads, settings, watchers });
+  registerIpcHandlers({ projects, search, reviews, threads, settings, codex, watchers });
 
   const projectRows = await projects.list();
   await watchers.primeExisting(projectRows.map((project) => ({ id: project.id, repoPath: project.repoPath })));

@@ -14,6 +14,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CommandPaletteDialog } from "@renderer/components/command-palette";
 import { FileList } from "@renderer/components/file-list";
+import { NotificationList, type WorkflowNotification } from "@renderer/components/notification-list";
 import { EmptyState, LoadingState } from "@renderer/components/shared";
 import { ThreadPanel } from "@renderer/components/thread-panel";
 import {
@@ -70,7 +71,18 @@ import {
 import { matchesKeybinding } from "@renderer/keybindings";
 import { useAppStore } from "@renderer/store/app-store";
 import { DEFAULT_KEYBINDINGS, type Keybinding } from "@shared/keybindings";
-import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
+import type {
+  CodexStatus,
+  DiffLine,
+  FileDiff,
+  FileSearchResult,
+  GitDraftAction,
+  GitDraftResult,
+  GitRunAction,
+  GitWorkflowEvent,
+  ThreadAnchor,
+  ThreadPreview
+} from "@shared/types";
 import {
   ChevronDown,
   CloudUpload,
@@ -111,7 +123,7 @@ const FILE_SEARCH_LIMIT = 5;
 const FILE_SEARCH_DEBOUNCE_MS = 120;
 const SETTINGS_MENU_LABEL = "Settings";
 const NO_SUPPORTED_EDITOR_ERROR = "No supported editor found. Install Visual Studio Code or Cursor.";
-const GIT_ACTIONS_NOT_AVAILABLE_ERROR = "Git automation is coming soon. Run commit, push, and PR commands in your terminal for now.";
+const CODEX_NOT_AVAILABLE_ERROR = "Codex CLI is unavailable. Install Codex CLI and confirm `codex app-server` works in your terminal.";
 
 const keybindingShortcutFallbacks: Record<string, string> = {
   "command-menu.open": "mod+/",
@@ -148,7 +160,7 @@ export default function App() {
     activeProjectId,
     activeSession,
     files,
-    selectedFilePath,
+    selectedFileId,
     openFiles,
     diffsByFile,
     threadPreviewsByFile,
@@ -214,6 +226,11 @@ export default function App() {
   const [keybindings, setKeybindings] = useState<Keybinding[]>(DEFAULT_KEYBINDINGS);
   const [isUnsupportedEditorDialogOpen, setUnsupportedEditorDialogOpen] = useState(false);
   const [gitActionsMenuWidth, setGitActionsMenuWidth] = useState(180);
+  const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const [gitActionLoading, setGitActionLoading] = useState<GitDraftAction | GitRunAction | null>(null);
+  const [draftResult, setDraftResult] = useState<GitDraftResult | null>(null);
+  const [draftDialogOpen, setDraftDialogOpen] = useState(false);
+  const [workflowNotifications, setWorkflowNotifications] = useState<WorkflowNotification[]>([]);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
   const gitActionsControlRef = useRef<HTMLDivElement | null>(null);
   const sidebarHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -222,12 +239,14 @@ export default function App() {
   const commandMenuInputRef = useRef<HTMLInputElement | null>(null);
   const fileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
-  const deferredFilePath = useDeferredValue(selectedFilePath);
-  const activeDiff = deferredFilePath ? diffsByFile[deferredFilePath] ?? null : null;
-  const activeThreadPreviews = selectedFilePath ? threadPreviewsByFile[selectedFilePath] ?? [] : [];
+  const fileById = useMemo(() => Object.fromEntries(files.map((file) => [file.id, file])), [files]);
+  const selectedFile = selectedFileId ? fileById[selectedFileId] ?? null : null;
+  const deferredFileId = useDeferredValue(selectedFileId);
+  const activeDiff = deferredFileId ? diffsByFile[deferredFileId] ?? null : null;
+  const activeThreadPreviews = selectedFileId ? threadPreviewsByFile[selectedFileId] ?? [] : [];
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const hasUncommittedChanges = activeSession?.dirty ?? false;
-  const gitPrimaryLabel = hasUncommittedChanges ? "Commit & PR" : "Push & Create PR";
+  const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : "Push";
   const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];
   const branchPickerProjectId = commandMenuView.type === "switch-branch" ? commandMenuView.projectId : activeProjectId;
   const branchPickerProject =
@@ -337,12 +356,16 @@ export default function App() {
     const offSessionCreated = window.codeWatch.events.onReviewSessionCreated((payload) => {
       void refreshProject(payload.projectId);
     });
+    const offGitWorkflow = window.codeWatch.events.onGitWorkflowProgress((payload) => {
+      setWorkflowNotifications((previous) => upsertWorkflowNotification(previous, payload));
+    });
 
     return () => {
       offRepoChanged();
       offBranchChanged();
       offDirtyChanged();
       offSessionCreated();
+      offGitWorkflow();
     };
   }, [initialize, refreshProject]);
 
@@ -358,6 +381,29 @@ export default function App() {
       .catch((error) => {
         if (!cancelled) {
           setUiError(error, "Failed to load keybindings.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.codeWatch.assistants.codexStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setCodexStatus(status);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setCodexStatus({
+            available: false,
+            version: null,
+            reason: error instanceof Error ? error.message : CODEX_NOT_AVAILABLE_ERROR
+          });
         }
       });
 
@@ -417,7 +463,7 @@ export default function App() {
     }
 
     const measureWidth = () => {
-      setGitActionsMenuWidth(Math.ceil(gitActionsControl.getBoundingClientRect().width));
+      setGitActionsMenuWidth(Math.ceil(gitActionsControl.scrollWidth));
     };
 
     measureWidth();
@@ -585,9 +631,9 @@ export default function App() {
     const handleGlobalFileSearchKeys = (event: KeyboardEvent) => {
       if (matchesCommand(event, keybindings, "file.close")) {
         event.preventDefault();
-        const { selectedFilePath, closeFile: closeFileAction } = useAppStore.getState();
-        if (selectedFilePath) {
-          void closeFileAction(selectedFilePath);
+        const { selectedFileId, closeFile: closeFileAction } = useAppStore.getState();
+        if (selectedFileId) {
+          void closeFileAction(selectedFileId);
         }
         return;
       }
@@ -700,7 +746,14 @@ export default function App() {
     if (nextState.activeSession?.session.id !== result.sessionId) {
       await selectSession(result.projectId, result.sessionId);
     }
-    await selectFile(result.filePath);
+    const hydratedState = useAppStore.getState();
+    const matchedFile =
+      hydratedState.files.find((file) => file.filePath === result.filePath && file.source === "committed")
+      ?? hydratedState.files.find((file) => file.filePath === result.filePath)
+      ?? null;
+    if (matchedFile) {
+      await selectFile(matchedFile.id);
+    }
   }
 
   function closeCommandMenu() {
@@ -806,16 +859,75 @@ export default function App() {
     useAppStore.setState({ error: message });
   }
 
-  async function runGitPrimaryAction() {
-    setUiError(new Error(GIT_ACTIONS_NOT_AVAILABLE_ERROR), GIT_ACTIONS_NOT_AVAILABLE_ERROR);
+  function setUiToastMessage(message: string) {
+    useAppStore.setState({ error: message });
   }
 
-  async function runSingleGitAction(action: "commit" | "push" | "pr") {
-    const actionLabel = action === "pr" ? "Create PR" : action.charAt(0).toUpperCase() + action.slice(1);
-    setUiError(
-      new Error(`${actionLabel} is not wired yet. ${GIT_ACTIONS_NOT_AVAILABLE_ERROR}`),
-      `${actionLabel} is not wired yet.`
-    );
+  async function runGitPrimaryAction() {
+    await runGitAction(hasUncommittedChanges ? "commit" : "push");
+  }
+
+  async function runGitAction(action: GitRunAction) {
+    if (!activeSession) {
+      return;
+    }
+
+    if (!codexStatus?.available) {
+      setUiError(new Error(codexStatus?.reason ?? CODEX_NOT_AVAILABLE_ERROR), CODEX_NOT_AVAILABLE_ERROR);
+      return;
+    }
+
+    setGitActionLoading(action);
+    try {
+      const result = await window.codeWatch.assistants.runGitAction(activeSession.session.id, action);
+      setDraftDialogOpen(false);
+      setDraftResult(null);
+      setUiToastMessage(result.summary);
+      await refreshProject(activeSession.project.id);
+    } catch (error) {
+      setUiError(error, `Failed to ${action}.`);
+    } finally {
+      setGitActionLoading(null);
+    }
+  }
+
+  async function runGitDraftAction(action: GitDraftAction) {
+    if (!activeSession) {
+      return;
+    }
+
+    if (!codexStatus?.available) {
+      setUiError(new Error(codexStatus?.reason ?? CODEX_NOT_AVAILABLE_ERROR), CODEX_NOT_AVAILABLE_ERROR);
+      return;
+    }
+
+    setGitActionLoading(action);
+    try {
+      const result = await window.codeWatch.assistants.draftGitArtifacts(activeSession.session.id, action);
+      setDraftResult(result);
+      setDraftDialogOpen(true);
+      clearError();
+    } catch (error) {
+      setUiError(error, "Failed to draft with Codex.");
+    } finally {
+      setGitActionLoading(null);
+    }
+  }
+
+  async function copyDraftText(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (error) {
+      setUiError(error, "Failed to copy draft to the clipboard.");
+    }
+  }
+
+  function dismissWorkflowNotification(id: string) {
+    setWorkflowNotifications((previous) => previous.filter((notification) => notification.id !== id));
+  }
+
+  function openWorkflowUrl(url: string) {
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1035,7 +1147,7 @@ export default function App() {
           {loadingReview ? (
             <LoadingState label="Refreshing" />
           ) : (
-            <FileList files={files} selectedFilePath={selectedFilePath} onSelect={selectFile} />
+            <FileList files={files} selectedFileId={selectedFileId} onSelect={selectFile} />
           )}
         </section>
       );
@@ -1085,33 +1197,37 @@ export default function App() {
           >
             <div className="diff-tabs" onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
               {openFiles.length > 0 ? (
-                openFiles.map((file) => {
-                  const isActive = file === selectedFilePath;
+                openFiles.map((fileId) => {
+                  const file = fileById[fileId];
+                  if (!file) {
+                    return null;
+                  }
+                  const isActive = fileId === selectedFileId;
                   return (
                     <div
-                      key={file}
-                      className={`diff-tab ${isActive ? "diff-tab-active" : ""} ${draggedTab === file ? "diff-tab-dragging" : ""
-                        } ${dropTargetTab === file && draggedTab !== file ? "diff-tab-drop-target" : ""}`}
+                      key={fileId}
+                      className={`diff-tab ${isActive ? "diff-tab-active" : ""} ${draggedTab === fileId ? "diff-tab-dragging" : ""
+                        } ${dropTargetTab === fileId && draggedTab !== fileId ? "diff-tab-drop-target" : ""}`}
                       draggable
                       onDragStart={(e) => {
                         e.stopPropagation();
-                        e.dataTransfer.setData("application/vnd.code-watch.tab", file);
-                        setDraggedTab(file);
-                        setDropTargetTab(file);
+                        e.dataTransfer.setData("application/vnd.code-watch.tab", fileId);
+                        setDraggedTab(fileId);
+                        setDropTargetTab(fileId);
                       }}
                       onDragOver={(e) => {
                         if (e.dataTransfer.types.includes("application/vnd.code-watch.tab")) {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (dropTargetTab !== file) setDropTargetTab(file);
+                          if (dropTargetTab !== fileId) setDropTargetTab(fileId);
                         }
                       }}
                       onDrop={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        const draggedFile = e.dataTransfer.getData("application/vnd.code-watch.tab");
-                        if (draggedFile && draggedFile !== file) {
-                          const newOpenFiles = reorderIdList(openFiles, draggedFile, file);
+                        const draggedFileId = e.dataTransfer.getData("application/vnd.code-watch.tab");
+                        if (draggedFileId && draggedFileId !== fileId) {
+                          const newOpenFiles = reorderIdList(openFiles, draggedFileId, fileId);
                           if (newOpenFiles.length > 0) reorderOpenFiles(newOpenFiles);
                         }
                         setDraggedTab(null);
@@ -1124,16 +1240,19 @@ export default function App() {
                       }}
                       onClick={() => {
                         if (!isActive) {
-                          void selectFile(file);
+                          void selectFile(fileId);
                         }
                       }}
                     >
-                      <span className="diff-tab-label">{file.split('/').pop() || file}</span>
+                      <span className="diff-tab-label">
+                        {(file.filePath.split("/").pop() || file.filePath)}
+                        {file.source === "working-tree" ? " *" : ""}
+                      </span>
                       <button
                         className="diff-tab-close"
                         onClick={(e) => {
                           e.stopPropagation();
-                          void closeFile(file);
+                          void closeFile(fileId);
                         }}
                       >
                         <X size={14} />
@@ -1154,13 +1273,14 @@ export default function App() {
               sessionId={activeSession!.session.id}
               diff={activeDiff}
               threadPreviews={activeThreadPreviews}
+              threadingEnabled={selectedFile?.source === "committed"}
               onCreateThread={(anchor) => beginThread(anchor)}
               onSelectThread={(threadId) => void selectThread(threadId)}
             />
-          ) : selectedFilePath ? (
+          ) : selectedFileId ? (
             <LoadingState label="Loading diff" />
           ) : (
-            <EmptyState title="No files" body="No committed changes." />
+            <EmptyState title="No files" body="No committed or working-tree changes." />
           )}
         </section>
       );
@@ -1183,7 +1303,8 @@ export default function App() {
           </div>
         </div>
         <ThreadPanel
-          filePath={selectedFilePath}
+          filePath={selectedFile?.filePath ?? null}
+          threadEnabled={selectedFile?.source === "committed"}
           threadPreviews={activeThreadPreviews}
           activeThread={activeThread}
           activeThreadPreview={activeThreadPreview}
@@ -1330,8 +1451,8 @@ export default function App() {
               <div className="topbar-actions">
                 <div ref={gitActionsControlRef} className="git-actions-control" role="group" aria-label="Git actions">
                   <button type="button" className="git-action-primary" onClick={() => void runGitPrimaryAction()}>
-                    <Github className="git-action-icon" />
-                    <span>{gitPrimaryLabel}</span>
+                    {hasUncommittedChanges ? <GitCommitHorizontal className="git-action-icon" /> : <CloudUpload className="git-action-icon" />}
+                    <span>{gitActionLoading === (hasUncommittedChanges ? "commit" : "push") ? (hasUncommittedChanges ? "Committing..." : "Pushing...") : gitPrimaryLabel}</span>
                   </button>
 
                   <DropdownMenu>
@@ -1349,32 +1470,23 @@ export default function App() {
                       style={{ "--git-actions-width": `${gitActionsMenuWidth}px` } as CSSProperties}
                     >
                       <DropdownMenuGroup>
-                        <DropdownMenuItem
-                          disabled={!hasUncommittedChanges}
-                          onClick={() => void runSingleGitAction("commit")}
-                        >
+                        <DropdownMenuItem onClick={() => void runGitAction("commit")}>
                           <span className="git-action-menu-item-main">
                             <GitCommitHorizontal className="git-action-menu-icon" />
-                            <span>Commit</span>
+                            <span>{gitActionLoading === "commit" ? "Committing..." : "Commit"}</span>
                           </span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={hasUncommittedChanges}
-                          onClick={() => void runSingleGitAction("push")}
-                        >
+                        <DropdownMenuItem onClick={() => void runGitAction("push")}>
                           <span className="git-action-menu-item-main">
                             <CloudUpload className="git-action-menu-icon" />
-                            <span>Push</span>
+                            <span>{gitActionLoading === "push" ? "Pushing..." : "Push"}</span>
                           </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          disabled={hasUncommittedChanges}
-                          onClick={() => void runSingleGitAction("pr")}
-                        >
+                        <DropdownMenuItem onClick={() => void runGitDraftAction("commit-and-pr")}>
                           <span className="git-action-menu-item-main">
                             <Github className="git-action-menu-icon" />
-                            <span>Create PR</span>
+                            <span>{gitActionLoading === "commit-and-pr" ? "Drafting both..." : "Create PR"}</span>
                           </span>
                         </DropdownMenuItem>
                       </DropdownMenuGroup>
@@ -1490,6 +1602,76 @@ export default function App() {
           )}
         </main>
 
+        {draftDialogOpen && draftResult ? (
+          <div className="draft-dialog-backdrop" role="presentation" onClick={() => setDraftDialogOpen(false)}>
+            <div
+              className="draft-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Codex draft"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="draft-dialog-header">
+                <div>
+                  <h3>Codex Draft</h3>
+                  <p>{codexStatus?.version ? `Codex ${codexStatus.version}` : "Codex CLI"} · Live working tree for commits, review session for PRs</p>
+                </div>
+                <button type="button" className="pane-toolbar-button" onClick={() => setDraftDialogOpen(false)} aria-label="Close draft dialog">
+                  <X />
+                </button>
+              </div>
+
+              {draftResult.warning ? <p className="draft-dialog-warning">{draftResult.warning}</p> : null}
+
+              {draftResult.commit ? (() => {
+                const commitDraft = draftResult.commit;
+                return (
+                  <section className="draft-document">
+                    <div className="draft-document-header">
+                      <h4>Commit message</h4>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void copyDraftText(joinDraftDocument(commitDraft.title, commitDraft.body))}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <textarea
+                      className="draft-document-textarea"
+                      readOnly
+                      value={joinDraftDocument(commitDraft.title, commitDraft.body)}
+                    />
+                  </section>
+                );
+              })() : null}
+
+              {draftResult.pr ? (() => {
+                const prDraft = draftResult.pr;
+                return (
+                  <section className="draft-document">
+                    <div className="draft-document-header">
+                      <h4>Pull request</h4>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void copyDraftText(joinDraftDocument(prDraft.title, prDraft.body))}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <textarea
+                      className="draft-document-textarea"
+                      readOnly
+                      value={joinDraftDocument(prDraft.title, prDraft.body)}
+                    />
+                  </section>
+                );
+              })() : null}
+            </div>
+          </div>
+        ) : null}
+
         <CommandPaletteDialog
           open={isCommandMenuOpen}
           label={commandMenuView.type === "root" ? "Command menu" : "Switch review branch"}
@@ -1594,6 +1776,12 @@ export default function App() {
             <button onClick={clearError}>Dismiss</button>
           </div>
         ) : null}
+
+        <NotificationList
+          notifications={workflowNotifications}
+          onDismiss={dismissWorkflowNotification}
+          onOpen={openWorkflowUrl}
+        />
       </div>
     </SidebarProvider>
   );
@@ -1607,12 +1795,14 @@ function DiffViewer({
   sessionId,
   diff,
   threadPreviews,
+  threadingEnabled,
   onCreateThread,
   onSelectThread
 }: {
   sessionId: string;
   diff: FileDiff;
   threadPreviews: ThreadPreview[];
+  threadingEnabled: boolean;
   onCreateThread: (anchor: ThreadAnchor) => void;
   onSelectThread: (threadId: string) => void;
 }) {
@@ -1666,7 +1856,7 @@ function DiffViewer({
             const threads = threadMap.get(threadKey) ?? [];
             const firstThread = threads[0];
             const anchor = toAnchor(diff.filePath, row.line);
-            const canThread = row.line.oldLineNumber !== null || row.line.newLineNumber !== null;
+            const canThread = threadingEnabled && (row.line.oldLineNumber !== null || row.line.newLineNumber !== null);
 
             return (
               <button
@@ -1881,6 +2071,24 @@ function formatShortcut(rawShortcut: string): string {
       return token.length === 1 ? token.toUpperCase() : token;
     })
     .join("");
+}
+
+function joinDraftDocument(title: string, body: string): string {
+  return body.trim().length > 0 ? `${title}\n\n${body}` : title;
+}
+
+function upsertWorkflowNotification(
+  notifications: WorkflowNotification[],
+  payload: GitWorkflowEvent
+): WorkflowNotification[] {
+  const existingIndex = notifications.findIndex((notification) => notification.id === payload.id);
+  if (existingIndex === -1) {
+    return [payload, ...notifications].slice(0, 4);
+  }
+
+  const next = [...notifications];
+  next[existingIndex] = payload;
+  return next;
 }
 
 function clampSidebarWidth(value: number, minSidebarWidth: number): number {

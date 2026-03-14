@@ -19,7 +19,7 @@ interface AppState {
   activeProjectId: string | null;
   activeSession: ReviewSessionDetail | null;
   files: ChangedFile[];
-  selectedFilePath: string | null;
+  selectedFileId: string | null;
   openFiles: string[];
   diffsByFile: Record<string, FileDiff>;
   threadPreviewsByFile: Record<string, ThreadPreview[]>;
@@ -39,8 +39,8 @@ interface AppState {
   selectProject: (projectId: string) => Promise<void>;
   refreshProject: (projectId: string) => Promise<void>;
   selectSession: (projectId: string, sessionId: string) => Promise<void>;
-  selectFile: (filePath: string) => Promise<void>;
-  closeFile: (filePath: string) => Promise<void>;
+  selectFile: (fileId: string) => Promise<void>;
+  closeFile: (fileId: string) => Promise<void>;
   reorderOpenFiles: (openFiles: string[]) => void;
   listBranches: (projectId: string) => Promise<string[]>;
   updateBaseBranch: (projectId: string, baseBranch: string) => Promise<void>;
@@ -63,7 +63,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeProjectId: null,
   activeSession: null,
   files: [],
-  selectedFilePath: null,
+  selectedFileId: null,
   openFiles: [],
   diffsByFile: {},
   threadPreviewsByFile: {},
@@ -123,7 +123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeProjectId: nextProjectId,
           activeSession: state.activeProjectId === projectId ? null : state.activeSession,
           files: state.activeProjectId === projectId ? [] : state.files,
-          selectedFilePath: state.activeProjectId === projectId ? null : state.selectedFilePath,
+          selectedFileId: state.activeProjectId === projectId ? null : state.selectedFileId,
           openFiles: state.activeProjectId === projectId ? [] : state.openFiles,
           diffsByFile: state.activeProjectId === projectId ? {} : state.diffsByFile,
           threadPreviewsByFile: state.activeProjectId === projectId ? {} : state.threadPreviewsByFile,
@@ -151,7 +151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const updatedProject = await window.codeWatch.projects.togglePin(projectId);
       set((state) => ({
-        projects: state.projects.map((p) => (p.id === projectId ? updatedProject : p))
+        projects: state.projects.map((project) => (project.id === projectId ? updatedProject : project))
       }));
     } catch (error) {
       set({ error: toErrorMessage(error) });
@@ -194,7 +194,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   selectSession: async (projectId, sessionId) => {
-    const preferredFilePath = get().selectedFilePath;
+    const preferredFileId = get().selectedFileId;
     set({
       activeProjectId: projectId,
       loadingReview: true,
@@ -211,20 +211,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.codeWatch.reviews.files(sessionId)
       ]);
 
-      const selectedFilePath = resolveSelectedFilePath(files, preferredFilePath);
+      const selectedFileId = resolveSelectedFileId(files, preferredFileId);
       set((state) => {
         const isSameSession = state.activeSession?.session.id === sessionId;
-        const validPaths = new Set(files.map(f => f.filePath));
-        let nextOpenFiles = isSameSession ? state.openFiles.filter(f => validPaths.has(f)) : [];
-        if (selectedFilePath && !nextOpenFiles.includes(selectedFilePath)) {
-          nextOpenFiles.push(selectedFilePath);
+        const validFileIds = new Set(files.map((file) => file.id));
+        let nextOpenFiles = isSameSession ? state.openFiles.filter((fileId) => validFileIds.has(fileId)) : [];
+        if (selectedFileId && !nextOpenFiles.includes(selectedFileId)) {
+          nextOpenFiles.push(selectedFileId);
         }
 
         return {
           loadingReview: false,
           activeSession: detail,
           files,
-          selectedFilePath,
+          selectedFileId,
           openFiles: nextOpenFiles,
           sessionsByProject: {
             ...state.sessionsByProject,
@@ -237,22 +237,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       });
 
-      if (selectedFilePath) {
-        await get().selectFile(selectedFilePath);
+      if (selectedFileId) {
+        await get().selectFile(selectedFileId);
       }
     } catch (error) {
       set({ loadingReview: false, error: toErrorMessage(error) });
     }
   },
-  selectFile: async (filePath) => {
+  selectFile: async (fileId) => {
     const sessionId = get().activeSession?.session.id;
-    if (!sessionId) {
+    const file = get().files.find((entry) => entry.id === fileId);
+    if (!sessionId || !file) {
       return;
     }
 
     set((state) => ({
-      selectedFilePath: filePath,
-      openFiles: state.openFiles.includes(filePath) ? state.openFiles : [...state.openFiles, filePath],
+      selectedFileId: fileId,
+      openFiles: state.openFiles.includes(fileId) ? state.openFiles : [...state.openFiles, fileId],
       loadingDiff: true,
       loadingThread: true,
       activeThread: null,
@@ -262,8 +263,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const [diff, threadPreviews] = await Promise.all([
-        window.codeWatch.reviews.diff(sessionId, filePath),
-        window.codeWatch.threads.listForFile(sessionId, filePath)
+        window.codeWatch.reviews.diff(sessionId, file.filePath, file.source),
+        file.source === "committed" ? window.codeWatch.threads.listForFile(sessionId, file.filePath) : Promise.resolve([])
       ]);
 
       set((state) => ({
@@ -271,11 +272,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         loadingThread: false,
         diffsByFile: {
           ...state.diffsByFile,
-          [filePath]: diff
+          [fileId]: diff
         },
         threadPreviewsByFile: {
           ...state.threadPreviewsByFile,
-          [filePath]: threadPreviews
+          [fileId]: threadPreviews
         }
       }));
     } catch (error) {
@@ -285,25 +286,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   reorderOpenFiles: (openFiles) => {
     set({ openFiles });
   },
-  closeFile: async (filePath) => {
+  closeFile: async (fileId) => {
     const state = get();
-    const nextOpenFiles = state.openFiles.filter(f => f !== filePath);
-    let nextSelectedFilePath = state.selectedFilePath;
-    if (nextSelectedFilePath === filePath) {
-      const index = state.openFiles.indexOf(filePath);
+    const nextOpenFiles = state.openFiles.filter((openFileId) => openFileId !== fileId);
+    let nextSelectedFileId = state.selectedFileId;
+    if (nextSelectedFileId === fileId) {
+      const index = state.openFiles.indexOf(fileId);
       if (index > 0) {
-        nextSelectedFilePath = state.openFiles[index - 1] ?? null;
+        nextSelectedFileId = state.openFiles[index - 1] ?? null;
       } else if (nextOpenFiles.length > 0) {
-        nextSelectedFilePath = nextOpenFiles[0] ?? null;
+        nextSelectedFileId = nextOpenFiles[0] ?? null;
       } else {
-        nextSelectedFilePath = null;
+        nextSelectedFileId = null;
       }
     }
     set({ openFiles: nextOpenFiles });
-    if (nextSelectedFilePath && nextSelectedFilePath !== state.selectedFilePath) {
-      void get().selectFile(nextSelectedFilePath);
-    } else if (!nextSelectedFilePath && state.selectedFilePath) {
-      set({ selectedFilePath: null, activeThread: null, activeThreadPreview: null, composerAnchor: null });
+    if (nextSelectedFileId && nextSelectedFileId !== state.selectedFileId) {
+      void get().selectFile(nextSelectedFileId);
+    } else if (!nextSelectedFileId && state.selectedFileId) {
+      set({ selectedFileId: null, activeThread: null, activeThreadPreview: null, composerAnchor: null });
     }
   },
   listBranches: async (projectId) => {
@@ -350,8 +351,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectThread: async (threadId) => {
     set({ loadingThread: true, composerAnchor: null, error: null });
     try {
-      const filePath = get().selectedFilePath;
-      const preview = filePath ? get().threadPreviewsByFile[filePath]?.find((thread) => thread.id === threadId) ?? null : null;
+      const fileId = get().selectedFileId;
+      const preview = fileId ? get().threadPreviewsByFile[fileId]?.find((thread) => thread.id === threadId) ?? null : null;
       const activeThread = await window.codeWatch.threads.get(threadId);
       set({ activeThread, activeThreadPreview: preview, loadingThread: false });
     } catch (error) {
@@ -380,19 +381,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   createThread: async (body) => {
     const anchor = get().composerAnchor;
-    if (!anchor) {
+    const fileId = get().selectedFileId;
+    if (!anchor || !fileId) {
       return;
     }
 
     try {
       const preview = await window.codeWatch.threads.create(anchor, body);
       set((state) => {
-        const current = state.threadPreviewsByFile[anchor.filePath] ?? [];
+        const current = state.threadPreviewsByFile[fileId] ?? [];
         return {
           composerAnchor: null,
           threadPreviewsByFile: {
             ...state.threadPreviewsByFile,
-            [anchor.filePath]: [preview, ...current]
+            [fileId]: [preview, ...current]
           },
           activeThreadPreview: preview
         };
@@ -405,15 +407,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   addComment: async (body) => {
     const threadId = get().activeThread?.threadId;
-    const filePath = get().selectedFilePath;
-    if (!threadId || !filePath) {
+    const fileId = get().selectedFileId;
+    const file = fileId ? get().files.find((entry) => entry.id === fileId) ?? null : null;
+    if (!threadId || !fileId || !file || file.source !== "committed") {
       return;
     }
 
     try {
       const [activeThread, previews] = await Promise.all([
         window.codeWatch.threads.addComment(threadId, body),
-        window.codeWatch.threads.listForFile(get().activeSession!.session.id, filePath)
+        window.codeWatch.threads.listForFile(get().activeSession!.session.id, file.filePath)
       ]);
 
       const activeThreadPreview = previews.find((thread) => thread.id === threadId) ?? null;
@@ -422,7 +425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeThreadPreview,
         threadPreviewsByFile: {
           ...state.threadPreviewsByFile,
-          [filePath]: previews
+          [fileId]: previews
         }
       }));
     } catch (error) {
@@ -431,22 +434,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   resolveThread: async () => {
     const threadId = get().activeThread?.threadId;
-    const filePath = get().selectedFilePath;
+    const fileId = get().selectedFileId;
+    const file = fileId ? get().files.find((entry) => entry.id === fileId) ?? null : null;
     const sessionId = get().activeSession?.session.id;
-    if (!threadId || !filePath || !sessionId) {
+    if (!threadId || !fileId || !file || file.source !== "committed" || !sessionId) {
       return;
     }
 
     try {
       const [activeThreadPreview, previews] = await Promise.all([
         window.codeWatch.threads.resolve(threadId),
-        window.codeWatch.threads.listForFile(sessionId, filePath)
+        window.codeWatch.threads.listForFile(sessionId, file.filePath)
       ]);
       set((state) => ({
         activeThreadPreview,
         threadPreviewsByFile: {
           ...state.threadPreviewsByFile,
-          [filePath]: previews
+          [fileId]: previews
         }
       }));
     } catch (error) {
@@ -455,22 +459,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   reopenThread: async () => {
     const threadId = get().activeThread?.threadId;
-    const filePath = get().selectedFilePath;
+    const fileId = get().selectedFileId;
+    const file = fileId ? get().files.find((entry) => entry.id === fileId) ?? null : null;
     const sessionId = get().activeSession?.session.id;
-    if (!threadId || !filePath || !sessionId) {
+    if (!threadId || !fileId || !file || file.source !== "committed" || !sessionId) {
       return;
     }
 
     try {
       const [activeThreadPreview, previews] = await Promise.all([
         window.codeWatch.threads.reopen(threadId),
-        window.codeWatch.threads.listForFile(sessionId, filePath)
+        window.codeWatch.threads.listForFile(sessionId, file.filePath)
       ]);
       set((state) => ({
         activeThreadPreview,
         threadPreviewsByFile: {
           ...state.threadPreviewsByFile,
-          [filePath]: previews
+          [fileId]: previews
         }
       }));
     } catch (error) {
@@ -489,21 +494,21 @@ async function hydrateReview(
 ): Promise<void> {
   const sessionId = openResult.detail.session.id;
   const files = await window.codeWatch.reviews.files(sessionId);
-  const selectedFilePath = resolveSelectedFilePath(files, get().selectedFilePath);
+  const selectedFileId = resolveSelectedFileId(files, get().selectedFileId);
 
   set((state) => {
     const isSameSession = state.activeSession?.session.id === sessionId;
-    const validPaths = new Set(files.map(f => f.filePath));
-    let nextOpenFiles = isSameSession ? state.openFiles.filter(f => validPaths.has(f)) : [];
-    if (selectedFilePath && !nextOpenFiles.includes(selectedFilePath)) {
-      nextOpenFiles.push(selectedFilePath);
+    const validFileIds = new Set(files.map((file) => file.id));
+    let nextOpenFiles = isSameSession ? state.openFiles.filter((fileId) => validFileIds.has(fileId)) : [];
+    if (selectedFileId && !nextOpenFiles.includes(selectedFileId)) {
+      nextOpenFiles.push(selectedFileId);
     }
 
     return {
       loadingReview: false,
       activeSession: openResult.detail,
       files,
-      selectedFilePath,
+      selectedFileId,
       openFiles: nextOpenFiles,
       sessionsByProject: {
         ...state.sessionsByProject,
@@ -517,16 +522,17 @@ async function hydrateReview(
     };
   });
 
-  if (selectedFilePath) {
-    await get().selectFile(selectedFilePath);
+  if (selectedFileId) {
+    await get().selectFile(selectedFileId);
   }
 }
 
-function resolveSelectedFilePath(files: ChangedFile[], preferredFilePath: string | null): string | null {
-  if (preferredFilePath && files.some((file) => file.filePath === preferredFilePath)) {
-    return preferredFilePath;
+function resolveSelectedFileId(files: ChangedFile[], preferredFileId: string | null): string | null {
+  if (preferredFileId && files.some((file) => file.id === preferredFileId)) {
+    return preferredFileId;
   }
-  return files[0]?.filePath ?? null;
+
+  return files[0]?.id ?? null;
 }
 
 function toErrorMessage(error: unknown): string {

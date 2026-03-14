@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ChangedFile, FileStatus } from "@shared/types";
@@ -10,6 +11,14 @@ export interface RepoState {
   currentBranch: string | null;
   headSha: string | null;
   dirty: boolean;
+}
+
+export interface WorkingTreeSnapshot {
+  status: string;
+  stagedStat: string;
+  unstagedStat: string;
+  stagedDiff: string;
+  unstagedDiff: string;
 }
 
 interface ParsedStatusLine {
@@ -124,6 +133,7 @@ export class GitService {
       return {
         id: `${sessionId}:${index}:${line.filePath}`,
         sessionId,
+        source: "committed",
         filePath: line.filePath,
         oldPath: line.oldPath,
         newPath: line.newPath,
@@ -149,6 +159,204 @@ export class GitService {
       "--",
       filePath
     ]);
+  }
+
+  async getDiffStat(repoPath: string, mergeBaseSha: string, headSha: string): Promise<string> {
+    return this.runGit(repoPath, ["diff", "--stat=120,80", "--find-renames", mergeBaseSha, headSha]);
+  }
+
+  async getCombinedDiff(repoPath: string, mergeBaseSha: string, headSha: string): Promise<string> {
+    return this.runGit(repoPath, [
+      "diff",
+      "--find-renames",
+      "--unified=3",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      mergeBaseSha,
+      headSha
+    ]);
+  }
+
+  async getCommitSubjects(repoPath: string, mergeBaseSha: string, headSha: string): Promise<string[]> {
+    const output = await this.runGit(repoPath, ["log", "--format=%s", `${mergeBaseSha}..${headSha}`]);
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  async getWorkingTreeSnapshot(repoPath: string): Promise<WorkingTreeSnapshot> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const [status, stagedStat, unstagedStat, stagedDiff, unstagedDiff] = await Promise.all([
+      this.runGit(rootPath, ["status", "--short", "--untracked-files=all"]),
+      this.runGit(rootPath, ["diff", "--cached", "--stat=120,80", "--find-renames"]),
+      this.runGit(rootPath, ["diff", "--stat=120,80", "--find-renames"]),
+      this.runGit(rootPath, [
+        "diff",
+        "--cached",
+        "--find-renames",
+        "--unified=3",
+        "--no-color",
+        "--no-ext-diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/"
+      ]),
+      this.runGit(rootPath, [
+        "diff",
+        "--find-renames",
+        "--unified=3",
+        "--no-color",
+        "--no-ext-diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/"
+      ])
+    ]);
+
+    return {
+      status,
+      stagedStat,
+      unstagedStat,
+      stagedDiff,
+      unstagedDiff
+    };
+  }
+
+  async getWorkingTreeChangedFiles(repoPath: string, sessionId: string): Promise<ChangedFile[]> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const [statusOutput, numstatOutput, untrackedOutput] = await Promise.all([
+      this.runGit(rootPath, ["diff", "--name-status", "--find-renames", "HEAD"]),
+      this.runGit(rootPath, ["diff", "--numstat", "--find-renames", "HEAD"]),
+      this.runGit(rootPath, ["ls-files", "--others", "--exclude-standard"])
+    ]);
+
+    const statusLines = statusOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => this.parseStatusLine(line));
+
+    const numstatMap = new Map<string, ParsedNumstatLine>();
+    for (const line of numstatOutput.split("\n").map((entry) => entry.trim()).filter(Boolean)) {
+      const parsed = this.parseNumstatLine(line);
+      numstatMap.set(parsed.filePath, parsed);
+    }
+
+    const trackedFiles = statusLines.map((line, index) => {
+      const stats = numstatMap.get(line.filePath) ?? { additions: 0, deletions: 0 };
+      return {
+        id: `working-tree:${sessionId}:${index}:${line.filePath}`,
+        sessionId,
+        source: "working-tree" as const,
+        filePath: line.filePath,
+        oldPath: line.oldPath,
+        newPath: line.newPath,
+        status: line.status,
+        additions: stats.additions ?? null,
+        deletions: stats.deletions ?? null,
+        isBinary: stats.additions === null && stats.deletions === null
+      };
+    });
+
+    const seenPaths = new Set(trackedFiles.map((file) => file.filePath));
+    const untrackedFiles = untrackedOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => Boolean(line) && !seenPaths.has(line))
+      .map((filePath, index) => ({
+        id: `working-tree:${sessionId}:untracked:${index}:${filePath}`,
+        sessionId,
+        source: "working-tree" as const,
+        filePath,
+        oldPath: null,
+        newPath: filePath,
+        status: "added" as const,
+        additions: null,
+        deletions: null,
+        isBinary: false
+      }));
+
+    return [...trackedFiles, ...untrackedFiles];
+  }
+
+  async getWorkingTreeFileDiff(repoPath: string, filePath: string): Promise<string> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const trackedDiff = await this.runGit(rootPath, [
+      "diff",
+      "--find-renames",
+      "--unified=3",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "HEAD",
+      "--",
+      filePath
+    ]);
+
+    if (trackedDiff.trim().length > 0) {
+      return trackedDiff;
+    }
+
+    const absolutePath = path.join(rootPath, filePath);
+    const fileContents = await fs.readFile(absolutePath);
+    if (fileContents.includes(0)) {
+      return "";
+    }
+
+    return this.runGit(rootPath, [
+      "diff",
+      "--no-index",
+      "--unified=3",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--",
+      "/dev/null",
+      filePath
+    ]).catch(() => "");
+  }
+
+  async stagePaths(repoPath: string, filePaths: string[]): Promise<void> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const uniquePaths = [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
+    if (uniquePaths.length === 0) {
+      return;
+    }
+
+    await this.runGit(rootPath, ["add", "--all", "--", ...uniquePaths]);
+  }
+
+  async commit(repoPath: string, title: string, body: string): Promise<void> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const trimmedTitle = title.trim();
+    const trimmedBody = body.trim();
+    if (!trimmedTitle) {
+      throw new Error("Codex returned an empty commit title.");
+    }
+
+    const args = trimmedBody.length > 0
+      ? ["commit", "-m", trimmedTitle, "-m", trimmedBody]
+      : ["commit", "-m", trimmedTitle];
+
+    await this.runGit(rootPath, args);
+  }
+
+  async pushHead(repoPath: string): Promise<void> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    await this.runGit(rootPath, ["push", "--set-upstream", "origin", "HEAD"]);
+  }
+
+  async createPullRequest(repoPath: string, title: string, body: string): Promise<string> {
+    const rootPath = await this.assertGitRepo(repoPath);
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      throw new Error("Codex returned an empty PR title.");
+    }
+
+    return (await this.runCommand("gh", ["pr", "create", "--title", trimmedTitle, "--body", body], rootPath)).trim();
   }
 
   private async hasRef(repoPath: string, ref: string): Promise<boolean> {
@@ -204,16 +412,20 @@ export class GitService {
   }
 
   private async runGit(repoPath: string, args: string[]): Promise<string> {
+    return this.runCommand("git", args, repoPath);
+  }
+
+  private async runCommand(command: string, args: string[], cwd: string): Promise<string> {
     try {
-      const { stdout } = await execFileAsync("git", args, {
-        cwd: repoPath,
+      const { stdout } = await execFileAsync(command, args, {
+        cwd,
         encoding: "utf8",
         maxBuffer: 8 * 1024 * 1024
       });
       return stdout;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`git ${args.join(" ")} failed in ${repoPath}: ${message}`);
+      throw new Error(`${command} ${args.join(" ")} failed in ${cwd}: ${message}`);
     }
   }
 }
