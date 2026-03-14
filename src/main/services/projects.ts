@@ -38,6 +38,7 @@ export class ProjectService {
         repoPath: project.repoPath,
         defaultBaseBranch: project.defaultBaseBranch,
         sortOrder: project.sortOrder,
+        isPinned: project.isPinned,
         createdAt: project.createdAt,
         lastOpenedAt: project.lastOpenedAt,
         currentBranch: state?.currentBranch ?? null,
@@ -148,6 +149,16 @@ export class ProjectService {
     return this.toSummary(await this.getById(projectId));
   }
 
+  async togglePin(projectId: string): Promise<ProjectSummary> {
+    const project = await this.getById(projectId);
+    this.db
+      .update(projectsTable)
+      .set({ isPinned: !project.isPinned })
+      .where(eq(projectsTable.id, projectId))
+      .run();
+    return this.toSummary(await this.getById(projectId));
+  }
+
   async touch(projectId: string): Promise<void> {
     this.db.update(projectsTable).set({ lastOpenedAt: now() }).where(eq(projectsTable.id, projectId)).run();
   }
@@ -160,6 +171,7 @@ export class ProjectService {
       repoPath: project.repoPath,
       defaultBaseBranch: project.defaultBaseBranch,
       sortOrder: project.sortOrder,
+      isPinned: project.isPinned,
       createdAt: project.createdAt,
       lastOpenedAt: project.lastOpenedAt,
       currentBranch: state?.currentBranch ?? null,

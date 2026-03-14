@@ -40,6 +40,10 @@ export function registerIpcHandlers(services: {
     await services.projects.remove(id);
   });
 
+  ipcMain.handle("projects:togglePin", async (_event, projectId: string) =>
+    services.projects.togglePin(z.string().min(1).parse(projectId))
+  );
+
   ipcMain.handle("projects:listBranches", async (_event, projectId: string) =>
     services.projects.listBranches(z.string().min(1).parse(projectId))
   );

@@ -35,6 +35,7 @@ interface AppState {
   addProject: () => Promise<void>;
   reorderProjects: (projectIds: string[]) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
+  togglePinProject: (projectId: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
   refreshProject: (projectId: string) => Promise<void>;
   selectSession: (projectId: string, sessionId: string) => Promise<void>;
@@ -142,6 +143,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (nextProjectId) {
         await get().selectProject(nextProjectId);
       }
+    } catch (error) {
+      set({ error: toErrorMessage(error) });
+    }
+  },
+  togglePinProject: async (projectId) => {
+    try {
+      const updatedProject = await window.codeWatch.projects.togglePin(projectId);
+      set((state) => ({
+        projects: state.projects.map((p) => (p.id === projectId ? updatedProject : p))
+      }));
     } catch (error) {
       set({ error: toErrorMessage(error) });
     }
