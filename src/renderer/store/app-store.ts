@@ -167,6 +167,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   selectSession: async (projectId, sessionId) => {
+    const preferredFilePath = get().selectedFilePath;
     set({
       activeProjectId: projectId,
       loadingReview: true,
@@ -183,7 +184,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.codeWatch.reviews.files(sessionId)
       ]);
 
-      const selectedFilePath = files[0]?.filePath ?? null;
+      const selectedFilePath = resolveSelectedFilePath(files, preferredFilePath);
       set((state) => ({
         loadingReview: false,
         activeSession: detail,
@@ -418,7 +419,7 @@ async function hydrateReview(
 ): Promise<void> {
   const sessionId = openResult.detail.session.id;
   const files = await window.codeWatch.reviews.files(sessionId);
-  const selectedFilePath = files[0]?.filePath ?? null;
+  const selectedFilePath = resolveSelectedFilePath(files, get().selectedFilePath);
 
   set((state) => ({
     loadingReview: false,
@@ -439,6 +440,13 @@ async function hydrateReview(
   if (selectedFilePath) {
     await get().selectFile(selectedFilePath);
   }
+}
+
+function resolveSelectedFilePath(files: ChangedFile[], preferredFilePath: string | null): string | null {
+  if (preferredFilePath && files.some((file) => file.filePath === preferredFilePath)) {
+    return preferredFilePath;
+  }
+  return files[0]?.filePath ?? null;
 }
 
 function toErrorMessage(error: unknown): string {
