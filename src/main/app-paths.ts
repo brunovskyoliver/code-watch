@@ -9,7 +9,8 @@ export function getCodeWatchPaths(homeDirectory = os.homedir()) {
   const userDataPath = path.join(homeDirectory, CODE_WATCH_HOME_DIRECTORY);
   return {
     userDataPath,
-    sessionDataPath: path.join(userDataPath, "session")
+    sessionDataPath: path.join(userDataPath, "session"),
+    keybindingsPath: path.join(userDataPath, "keybindings.json")
   };
 }
 

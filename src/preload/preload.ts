@@ -36,6 +36,11 @@ const api: CodeWatchApi = {
   search: {
     files: (query, limit) => ipcRenderer.invoke("search:files", query, limit)
   },
+  settings: {
+    loadKeybindings: () => ipcRenderer.invoke("settings:loadKeybindings"),
+    openKeybindingsInEditor: () => ipcRenderer.invoke("settings:openKeybindingsInEditor"),
+    reset: () => ipcRenderer.invoke("settings:reset")
+  },
   events: {
     onRepoChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.changed", listener),
     onBranchChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.branchChanged", listener),

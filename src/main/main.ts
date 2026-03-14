@@ -8,6 +8,7 @@ import { FileSearchService } from "@main/services/file-search";
 import { GitService } from "@main/services/git";
 import { ProjectService } from "@main/services/projects";
 import { ReviewService } from "@main/services/reviews";
+import { SettingsService } from "@main/services/settings";
 import { ThreadService } from "@main/services/threads";
 import { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
 
@@ -48,15 +49,18 @@ async function bootstrap(): Promise<void> {
   log.initialize();
   log.errorHandler.startCatching();
 
+  const { keybindingsPath } = configureAppDataPaths(app);
+
   const { db } = createDatabase();
   const git = new GitService();
   const projects = new ProjectService(db, git);
   const search = new FileSearchService(db);
   const reviews = new ReviewService(db, git, broadcast);
   const threads = new ThreadService(db);
+  const settings = new SettingsService(keybindingsPath);
   const watchers = new RepoWatcherRegistry(git, broadcast);
 
-  registerIpcHandlers({ projects, search, reviews, threads, watchers });
+  registerIpcHandlers({ projects, search, reviews, threads, settings, watchers });
 
   const projectRows = await projects.list();
   await watchers.primeExisting(projectRows.map((project) => ({ id: project.id, repoPath: project.repoPath })));
