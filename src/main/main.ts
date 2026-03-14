@@ -35,7 +35,7 @@ async function createMainWindow(): Promise<void> {
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    // mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     await mainWindow.loadFile(path.join(__dirname, "../renderer/main_window/index.html"));
   }
