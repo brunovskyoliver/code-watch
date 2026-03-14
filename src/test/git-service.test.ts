@@ -53,4 +53,28 @@ describe("GitService", () => {
 
     rmSync(tempRoot, { recursive: true, force: true });
   });
+
+  it("stages tracked deletions but skips missing untracked paths", async () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-watch-git-"));
+    const repoPath = path.join(tempRoot, "repo");
+    mkdirSync(repoPath);
+    execFileSync("git", ["init", "-b", "main"], { cwd: repoPath });
+    execFileSync("git", ["config", "user.email", "code-watch@example.com"], { cwd: repoPath });
+    execFileSync("git", ["config", "user.name", "Code Watch"], { cwd: repoPath });
+
+    const trackedPath = path.join(repoPath, "tracked.txt");
+    writeFileSync(trackedPath, "tracked\n");
+    execFileSync("git", ["add", "tracked.txt"], { cwd: repoPath });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: repoPath });
+    rmSync(trackedPath);
+
+    const git = new GitService();
+    await expect(git.stagePaths(repoPath, ["tracked.txt", "t"])).resolves.toBeUndefined();
+
+    const status = execFileSync("git", ["status", "--short"], { cwd: repoPath, encoding: "utf8" });
+    expect(status).toContain("D  tracked.txt");
+    expect(status).not.toContain("fatal");
+
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
 });
