@@ -26,6 +26,19 @@ describe("command-menu", () => {
     expect(filterCommandMenuItems(items, "jump changed")).toEqual([items[0]]);
   });
 
+  it("prioritizes direct title-prefix matches ahead of remote-prefixed branch names", () => {
+    const branches = createBranchCommandMenuItems(
+      "project_1",
+      ["origin/t3code/branch-picker-button-list", "t3code/branch-picker-button-list"],
+      null
+    );
+
+    expect(filterCommandMenuItems(branches, "t3code/").map((branch) => branch.title)).toEqual([
+      "t3code/branch-picker-button-list",
+      "origin/t3code/branch-picker-button-list"
+    ]);
+  });
+
   it("builds branch menu items with active-branch metadata", () => {
     expect(createBranchCommandMenuItems("project_1", ["main", "feature/demo"], "feature/demo")).toEqual([
       {
