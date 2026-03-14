@@ -32,15 +32,27 @@ import {
 } from "@renderer/command-menu";
 import {
   createDefaultReviewLayout,
+  LEGACY_REVIEW_LAYOUT_STORAGE_KEY,
   getNormalizedPaneSizes,
   getReviewLayoutStorageKey,
+  REVIEW_LAYOUT_STORAGE_KEY_PREFIX,
   readStoredReviewLayout,
   reorderReviewPanes,
   setReviewPaneVisibility,
   type ReviewLayoutState,
   type ReviewPaneId
 } from "@renderer/layout/review-layout";
+import {
+  Menu,
+  MenuGroup,
+  MenuItem,
+  MenuPanel,
+  MenuSeparator,
+  MenuTrigger
+} from "@renderer/components/ui/menu";
+import { matchesKeybinding } from "@renderer/keybindings";
 import { useAppStore } from "@renderer/store/app-store";
+import { DEFAULT_KEYBINDINGS, type Keybinding } from "@shared/keybindings";
 import type { DiffLine, FileDiff, FileSearchResult, ThreadAnchor, ThreadPreview } from "@shared/types";
 import { FolderInput, Files, FileDiff as FDiff, NotebookPen, Settings, X } from 'lucide-react';
 import { PinList } from "./components/pin-list";
@@ -61,6 +73,7 @@ interface FlattenedDiffRows {
 }
 
 const SIDEBAR_WIDTH_KEY = "code-watch.sidebar-width";
+const DEFAULT_SIDEBAR_WIDTH = 248;
 const DEFAULT_MIN_SIDEBAR_WIDTH = 235;
 const MAX_SIDEBAR_WIDTH = 360;
 const PROJECT_MENU_OFFSET = 6;
@@ -68,6 +81,28 @@ const MAX_RENDERED_DIFF_LINES = 1000;
 const MIN_PANE_WIDTH = 180;
 const FILE_SEARCH_LIMIT = 5;
 const FILE_SEARCH_DEBOUNCE_MS = 120;
+const SETTINGS_MENU_LABEL = "Settings";
+
+const keybindingShortcutFallbacks: Record<string, string> = {
+  "command-menu.open": "mod+/",
+  "file-search.open": "/"
+};
+
+const keybindingCommandMap: Record<string, readonly string[]> = {
+  "project-context.close": ["project-context.close"],
+  "base-branch-menu.close": ["base-branch-menu.close"],
+  "file.close": ["file.close"],
+  "command-menu.open": ["command-menu.open"],
+  "file-search.open": ["file-search.open"],
+  "command-menu.close-or-back": ["command-menu.close-or-back"],
+  "command-menu.next": ["command-menu.next"],
+  "command-menu.previous": ["command-menu.previous"],
+  "command-menu.select": ["command-menu.select"],
+  "file-search.close": ["file-search.close"],
+  "file-search.next": ["file-search.next"],
+  "file-search.previous": ["file-search.previous"],
+  "file-search.select": ["file-search.select"]
+};
 
 const paneLabels: Record<ReviewPaneId, string> = {
   files: "Files",
@@ -120,7 +155,7 @@ export default function App() {
     clearError
   } = useAppStore();
 
-  const [sidebarWidth, setSidebarWidth] = useState(248);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [sidebarMinWidth, setSidebarMinWidth] = useState(DEFAULT_MIN_SIDEBAR_WIDTH);
   const [reviewLayout, setReviewLayout] = useState<ReviewLayoutState>(() => createDefaultReviewLayout());
   const [layoutProjectId, setLayoutProjectId] = useState<string | null>(null);
@@ -146,6 +181,7 @@ export default function App() {
   const [fileSearchResults, setFileSearchResults] = useState<FileSearchResult[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
   const [fileSearchSelectedIndex, setFileSearchSelectedIndex] = useState(0);
+  const [keybindings, setKeybindings] = useState<Keybinding[]>(DEFAULT_KEYBINDINGS);
   const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarHeaderRef = useRef<HTMLDivElement | null>(null);
   const sidebarTitleRef = useRef<HTMLDivElement | null>(null);
@@ -174,6 +210,7 @@ export default function App() {
     branchSet.add(activeProject.defaultBaseBranch);
     return [...branchSet].sort((a, b) => a.localeCompare(b));
   }, [activeProject, baseBranchesByProject]);
+  const shortcutByCommand = useMemo(() => buildShortcutByCommand(keybindings), [keybindings]);
   const commandMenuItems = useMemo(
     () => [
       ...(activeProject
@@ -192,6 +229,7 @@ export default function App() {
         title: "Search Files",
         subtitle: "Jump to changed files across projects",
         keywords: ["open", "find", "palette"],
+        shortcut: shortcutByCommand.get("file-search.open") ?? keybindingShortcutFallbacks["file-search.open"],
         execute: () => openFileSearch()
       },
       {
@@ -205,7 +243,7 @@ export default function App() {
         }
       }
     ] satisfies Array<CommandMenuItem & { execute: () => void }>,
-    [activeProject, addProject]
+    [activeProject, addProject, shortcutByCommand]
   );
   const visibleCommandMenuItems = useMemo(() => {
     if (commandMenuView.type === "root") {
@@ -272,6 +310,26 @@ export default function App() {
       offSessionCreated();
     };
   }, [initialize, refreshProject]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.codeWatch.settings
+      .loadKeybindings()
+      .then((bindings) => {
+        if (!cancelled) {
+          setKeybindings(bindings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setUiError(error, "Failed to load keybindings.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const storedSidebarWidth = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -347,7 +405,7 @@ export default function App() {
   useEffect(() => {
     const closeProjectContextMenu = () => setProjectContextMenu(null);
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (matchesCommand(event, keybindings, "project-context.close")) {
         setProjectContextMenu(null);
       }
     };
@@ -362,7 +420,7 @@ export default function App() {
       window.removeEventListener("scroll", closeProjectContextMenu, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [keybindings]);
 
   useEffect(() => {
     setBaseBranchMenuOpen(false);
@@ -385,7 +443,7 @@ export default function App() {
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (matchesCommand(event, keybindings, "base-branch-menu.close")) {
         setBaseBranchMenuOpen(false);
       }
     };
@@ -396,7 +454,7 @@ export default function App() {
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isBaseBranchMenuOpen]);
+  }, [isBaseBranchMenuOpen, keybindings]);
 
   useEffect(
     () => () => {
@@ -468,13 +526,7 @@ export default function App() {
 
   useEffect(() => {
     const handleGlobalFileSearchKeys = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() === "w" &&
-        event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.shiftKey
-      ) {
+      if (matchesCommand(event, keybindings, "file.close")) {
         event.preventDefault();
         const { selectedFilePath, closeFile: closeFileAction } = useAppStore.getState();
         if (selectedFilePath) {
@@ -483,18 +535,14 @@ export default function App() {
         return;
       }
 
-      if (event.key === "/" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      if (matchesCommand(event, keybindings, "command-menu.open")) {
         event.preventDefault();
         openCommandMenu();
         return;
       }
 
       if (
-        event.key === "/" &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.shiftKey &&
+        matchesCommand(event, keybindings, "file-search.open") &&
         !isEditableTarget(event.target)
       ) {
         event.preventDefault();
@@ -503,7 +551,7 @@ export default function App() {
       }
 
       if (isCommandMenuOpen) {
-        if (event.key === "Escape") {
+        if (matchesCommand(event, keybindings, "command-menu.close-or-back")) {
           event.preventDefault();
           if (commandMenuView.type === "root") {
             closeCommandMenu();
@@ -513,19 +561,19 @@ export default function App() {
           return;
         }
 
-        if (event.key === "ArrowDown") {
+        if (matchesCommand(event, keybindings, "command-menu.next")) {
           event.preventDefault();
           setCommandMenuSelectedIndex((index) => clamp(index + 1, 0, Math.max(0, visibleCommandMenuItems.length - 1)));
           return;
         }
 
-        if (event.key === "ArrowUp") {
+        if (matchesCommand(event, keybindings, "command-menu.previous")) {
           event.preventDefault();
           setCommandMenuSelectedIndex((index) => clamp(index - 1, 0, Math.max(0, visibleCommandMenuItems.length - 1)));
           return;
         }
 
-        if (event.key === "Enter") {
+        if (matchesCommand(event, keybindings, "command-menu.select")) {
           const selectedCommand = visibleCommandMenuItems[commandMenuSelectedIndex];
           if (!selectedCommand) {
             return;
@@ -542,25 +590,25 @@ export default function App() {
         return;
       }
 
-      if (event.key === "Escape") {
+      if (matchesCommand(event, keybindings, "file-search.close")) {
         event.preventDefault();
         setFileSearchOpen(false);
         return;
       }
 
-      if (event.key === "ArrowDown") {
+      if (matchesCommand(event, keybindings, "file-search.next")) {
         event.preventDefault();
         setFileSearchSelectedIndex((index) => clamp(index + 1, 0, Math.max(0, fileSearchResults.length - 1)));
         return;
       }
 
-      if (event.key === "ArrowUp") {
+      if (matchesCommand(event, keybindings, "file-search.previous")) {
         event.preventDefault();
         setFileSearchSelectedIndex((index) => clamp(index - 1, 0, Math.max(0, fileSearchResults.length - 1)));
         return;
       }
 
-      if (event.key === "Enter") {
+      if (matchesCommand(event, keybindings, "file-search.select")) {
         const selectedResult = fileSearchResults[fileSearchSelectedIndex];
         if (!selectedResult) {
           return;
@@ -579,6 +627,7 @@ export default function App() {
     commandMenuView.type,
     isCommandMenuOpen,
     isFileSearchOpen,
+    keybindings,
     fileSearchResults,
     fileSearchSelectedIndex,
     visibleCommandMenuItems
@@ -644,6 +693,55 @@ export default function App() {
     setFileSearchQuery("");
     setFileSearchSelectedIndex(0);
     setFileSearchOpen(true);
+  }
+
+  async function editKeybindings() {
+    try {
+      await window.codeWatch.settings.openKeybindingsInEditor();
+      const nextKeybindings = await window.codeWatch.settings.loadKeybindings();
+      setKeybindings(nextKeybindings);
+      clearError();
+    } catch (error) {
+      setUiError(error, "Failed to open keybindings in $EDITOR.");
+    }
+  }
+
+  async function resetSettings() {
+    try {
+      await window.codeWatch.settings.reset();
+
+      const keysToRemove: string[] = [];
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index);
+        if (!key) {
+          continue;
+        }
+
+        if (key === LEGACY_REVIEW_LAYOUT_STORAGE_KEY || key.startsWith(`${REVIEW_LAYOUT_STORAGE_KEY_PREFIX}.`)) {
+          keysToRemove.push(key);
+        }
+      }
+
+      for (const key of keysToRemove) {
+        window.localStorage.removeItem(key);
+      }
+
+      window.localStorage.removeItem(SIDEBAR_WIDTH_KEY);
+      setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+      setReviewLayout(createDefaultReviewLayout());
+      setLayoutProjectId(activeProjectId);
+
+      const nextKeybindings = await window.codeWatch.settings.loadKeybindings();
+      setKeybindings(nextKeybindings);
+      clearError();
+    } catch (error) {
+      setUiError(error, "Failed to reset settings.");
+    }
+  }
+
+  function setUiError(error: unknown, fallbackMessage: string) {
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    useAppStore.setState({ error: message });
   }
 
   const beginSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1109,12 +1207,27 @@ export default function App() {
           <SidebarFooter>
             <SidebarMenu>
               <SidebarMenuItem>
-                <button type="button" className="project-button project-row sidebar-settings-button" aria-label="Settings">
-                  <div className="project-copy">
-                    <Settings className="project-icon" />
-                    <strong>Settings</strong>
-                  </div>
-                </button>
+                <Menu>
+                  <MenuTrigger type="button" className="project-button project-row sidebar-settings-button" aria-label={SETTINGS_MENU_LABEL}>
+                    <div className="project-copy">
+                      <Settings className="project-icon" />
+                      <strong>{SETTINGS_MENU_LABEL}</strong>
+                    </div>
+                  </MenuTrigger>
+                  <MenuPanel sideOffset={8}>
+                    <MenuGroup>
+                      <MenuItem onClick={() => void editKeybindings()}>
+                        <span>Edit keybindings</span>
+                      </MenuItem>
+                    </MenuGroup>
+                    <MenuSeparator />
+                    <MenuGroup>
+                      <MenuItem onClick={() => void resetSettings()}>
+                        <span>Reset settings...</span>
+                      </MenuItem>
+                    </MenuGroup>
+                  </MenuPanel>
+                </Menu>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarFooter>
@@ -1288,6 +1401,7 @@ export default function App() {
                   <strong>{command.title}</strong>
                   <p>{command.subtitle}</p>
                 </div>
+                {command.shortcut ? <span className="command-palette-shortcut">{formatShortcut(command.shortcut)}</span> : null}
               </button>
             ))
           )}
@@ -1557,6 +1671,70 @@ function isEditableTarget(target: EventTarget | null): boolean {
     return true;
   }
   return tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
+function matchesCommand(event: KeyboardEvent, keybindings: readonly Keybinding[], command: string): boolean {
+  const commands = keybindingCommandMap[command] ?? [command];
+  return keybindings.some((binding) => commands.includes(binding.command) && matchesKeybinding(event, binding.key));
+}
+
+function buildShortcutByCommand(keybindings: readonly Keybinding[]): Map<string, string> {
+  const shortcutByCommand = new Map<string, string>();
+  for (const binding of keybindings) {
+    if (!shortcutByCommand.has(binding.command)) {
+      shortcutByCommand.set(binding.command, binding.key);
+    }
+  }
+  return shortcutByCommand;
+}
+
+function formatShortcut(rawShortcut: string): string {
+  const isMac = navigator.platform.toLowerCase().includes("mac");
+  const tokens = rawShortcut
+    .split("+")
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!isMac) {
+    return tokens
+      .map((token) => {
+        if (token === "mod") {
+          return "Ctrl";
+        }
+        if (token === "ctrl") {
+          return "Ctrl";
+        }
+        if (token === "meta") {
+          return "Meta";
+        }
+        if (token === "alt") {
+          return "Alt";
+        }
+        if (token === "shift") {
+          return "Shift";
+        }
+        return token.length === 1 ? token.toUpperCase() : token;
+      })
+      .join("+");
+  }
+
+  return tokens
+    .map((token) => {
+      if (token === "mod" || token === "meta") {
+        return "⌘";
+      }
+      if (token === "ctrl") {
+        return "⌃";
+      }
+      if (token === "alt") {
+        return "⌥";
+      }
+      if (token === "shift") {
+        return "⇧";
+      }
+      return token.length === 1 ? token.toUpperCase() : token;
+    })
+    .join("");
 }
 
 function clampSidebarWidth(value: number, minSidebarWidth: number): number {

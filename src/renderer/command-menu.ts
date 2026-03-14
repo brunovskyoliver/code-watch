@@ -3,6 +3,7 @@ export interface CommandMenuItem {
   title: string;
   subtitle: string;
   keywords?: string[];
+  shortcut?: string;
 }
 
 export interface BranchCommandMenuItem extends CommandMenuItem {
@@ -28,7 +29,7 @@ export function filterCommandMenuItems<T extends CommandMenuItem>(items: readonl
       index,
       score: scoreCommandMenuItem(item, query.toLowerCase(), terms)
     }))
-    .filter((entry) => entry.score !== null)
+    .filter((entry): entry is typeof entry & { score: number } => entry.score !== null)
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .map((entry) => entry.item);
 }
