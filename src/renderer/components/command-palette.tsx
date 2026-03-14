@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 export function CommandPaletteDialog({
   open,
@@ -6,6 +6,7 @@ export function CommandPaletteDialog({
   value,
   placeholder,
   inputRef,
+  selectedItemId,
   onClose,
   onValueChange,
   children
@@ -15,10 +16,22 @@ export function CommandPaletteDialog({
   value: string;
   placeholder: string;
   inputRef: RefObject<HTMLInputElement | null>;
+  selectedItemId?: string | null;
   onClose: () => void;
   onValueChange: (value: string) => void;
   children: ReactNode;
 }) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open || !selectedItemId) {
+      return;
+    }
+
+    const selectedItem = listRef.current?.querySelector<HTMLElement>('[data-command-palette-selected="true"]');
+    selectedItem?.scrollIntoView({ block: "nearest" });
+  }, [open, selectedItemId]);
+
   if (!open) {
     return null;
   }
@@ -40,7 +53,7 @@ export function CommandPaletteDialog({
           ariaLabel={label}
           onValueChange={onValueChange}
         />
-        <div className="command-palette-list">{children}</div>
+        <div ref={listRef} className="command-palette-list">{children}</div>
       </div>
     </div>
   );

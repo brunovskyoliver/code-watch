@@ -1010,6 +1010,7 @@ export default function App() {
         value={commandMenuQuery}
         placeholder={commandMenuView.type === "root" ? "Search commands" : "Search branches"}
         inputRef={commandMenuInputRef}
+        selectedItemId={visibleCommandMenuItems[commandMenuSelectedIndex]?.id ?? null}
         onClose={closeCommandMenu}
         onValueChange={(value) => {
           setCommandMenuQuery(value);
@@ -1034,6 +1035,7 @@ export default function App() {
             <button
               key={command.id}
               className={`command-palette-item ${index === commandMenuSelectedIndex ? "command-palette-item-active" : ""}`}
+              data-command-palette-selected={index === commandMenuSelectedIndex ? "true" : undefined}
               onMouseEnter={() => setCommandMenuSelectedIndex(index)}
               onClick={() => command.execute()}
             >
@@ -1052,6 +1054,9 @@ export default function App() {
         value={fileSearchQuery}
         placeholder="Search files across projects"
         inputRef={fileSearchInputRef}
+        selectedItemId={fileSearchResults[fileSearchSelectedIndex]
+          ? `${fileSearchResults[fileSearchSelectedIndex]!.projectId}:${fileSearchResults[fileSearchSelectedIndex]!.sessionId}:${fileSearchResults[fileSearchSelectedIndex]!.filePath}`
+          : null}
         onClose={closeFileSearch}
         onValueChange={(value) => {
           setFileSearchQuery(value);
@@ -1067,6 +1072,7 @@ export default function App() {
             <button
               key={`${result.projectId}:${result.sessionId}:${result.filePath}`}
               className={`command-palette-item ${index === fileSearchSelectedIndex ? "command-palette-item-active" : ""}`}
+              data-command-palette-selected={index === fileSearchSelectedIndex ? "true" : undefined}
               onMouseEnter={() => setFileSearchSelectedIndex(index)}
               onClick={() => {
                 void applyFileSearchResult(result);
