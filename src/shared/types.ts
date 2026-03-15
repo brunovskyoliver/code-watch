@@ -149,6 +149,7 @@ export const reviewSessionEventSchema = z.object({
   sessionId: z.string()
 });
 
+
 export const fileSearchResultSchema = z.object({
   projectId: z.string(),
   projectName: z.string(),
@@ -167,6 +168,8 @@ export const fileSearchDepthSchema = z.enum(["global", "project"]);
 export const userSettingsSchema = z.object({
   fileSearchDepth: fileSearchDepthSchema
 });
+
+export const userSettingsChangedEventSchema = userSettingsSchema;
 
 export const DEFAULT_USER_SETTINGS = {
   fileSearchDepth: "global" as const
@@ -229,6 +232,7 @@ export type ReviewSessionDetail = z.infer<typeof reviewSessionDetailSchema>;
 export type ReviewOpenResult = z.infer<typeof reviewOpenResultSchema>;
 export type RepoStateEvent = z.infer<typeof repoStateEventSchema>;
 export type ReviewSessionEvent = z.infer<typeof reviewSessionEventSchema>;
+export type UserSettingsChangedEvent = z.infer<typeof userSettingsChangedEventSchema>;
 export type FileSearchResult = z.infer<typeof fileSearchResultSchema>;
 export type GitDraftAction = z.infer<typeof gitDraftActionSchema>;
 export type GitRunAction = z.infer<typeof gitRunActionSchema>;
@@ -297,6 +301,7 @@ export interface CodeWatchApi {
     onBranchChanged: (listener: (payload: RepoStateEvent) => void) => () => void;
     onDirtyStateChanged: (listener: (payload: RepoStateEvent) => void) => () => void;
     onReviewSessionCreated: (listener: (payload: ReviewSessionEvent) => void) => () => void;
+    onUserSettingsChanged: (listener: (payload: UserSettingsChangedEvent) => void) => () => void;
     onGitWorkflowProgress: (listener: (payload: GitWorkflowEvent) => void) => () => void;
   };
 }

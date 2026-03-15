@@ -379,6 +379,9 @@ export default function App() {
     const offSessionCreated = window.codeWatch.events.onReviewSessionCreated((payload) => {
       void refreshProject(payload.projectId);
     });
+    const offUserSettingsChanged = window.codeWatch.events.onUserSettingsChanged((payload) => {
+      useAppStore.setState({ userSettings: payload });
+    });
     const offGitWorkflow = window.codeWatch.events.onGitWorkflowProgress((payload) => {
       setWorkflowNotifications((previous) => upsertWorkflowNotification(previous, payload));
     });
@@ -388,6 +391,7 @@ export default function App() {
       offBranchChanged();
       offDirtyChanged();
       offSessionCreated();
+      offUserSettingsChanged();
       offGitWorkflow();
     };
   }, [initialize, refreshProject]);
@@ -662,7 +666,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [isFileSearchOpen, fileSearchQuery, searchFiles]);
+  }, [isFileSearchOpen, fileSearchQuery, searchFiles, userSettings.fileSearchDepth, activeProjectId]);
 
   useEffect(() => {
     const handleGlobalFileSearchKeys = (event: KeyboardEvent) => {
@@ -1068,7 +1072,7 @@ export default function App() {
 
   const handleBaseBranchMenuOpenChange = (isOpen: boolean) => {
     setBaseBranchMenuOpen(isOpen);
-    
+
     if (isOpen && activeProject) {
       setLoadingBaseBranches(true);
       void listBranches(activeProject.id).finally(() => {
@@ -1506,42 +1510,12 @@ export default function App() {
                       </PopoverContent>
                     </Popover>
                     <MenuSeparator />
-                    <Popover>
-                      <PopoverTrigger
-                        type="button"
-                        className="cw-menu-item sidebar-provider-menu-trigger"
-                        aria-label="Choose file search scope"
-                        openOnHover
-                        delay={100}
-                        closeDelay={80}
-                      >
-                        <span>{FILE_SEARCH_SCOPE_TITLE}</span>
-                        <ChevronRight className="sidebar-provider-menu-icon" />
-                      </PopoverTrigger>
-                      <PopoverContent side="right" align="start" sideOffset={12} alignOffset={-6}>
-                        <div className="sidebar-settings-popover" role="group" aria-label="File search scope settings">
-                          <div className="sidebar-provider-popover-layout">
-                            <p className="sidebar-settings-popover-title">{FILE_SEARCH_SCOPE_TITLE}</p>
-                            <ToggleGroup
-                              orientation="vertical"
-                              className="sidebar-provider-toggle-group"
-                              value={[userSettings.fileSearchDepth]}
-                              onValueChange={handleFileSearchDepthChange}
-                            >
-                              <Toggle value="global" className="sidebar-provider-toggle">Global</Toggle>
-                              <Toggle value="project" className="sidebar-provider-toggle">Current project</Toggle>
-                            </ToggleGroup>
-                          </div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    <MenuSeparator />
                     <MenuGroup>
                       <MenuItem onClick={() => void editKeybindings()}>
                         <span>Edit keybindings</span>
                       </MenuItem>
                       <MenuItem onClick={() => void editUserSettings()}>
-                        <span>Open settings file</span>
+                        <span>Edit settings</span>
                       </MenuItem>
                     </MenuGroup>
                     <MenuSeparator />
@@ -1857,7 +1831,7 @@ export default function App() {
           open={isFileSearchOpen}
           label="Search files"
           value={fileSearchQuery}
-          placeholder="Search files across projects"
+          placeholder={userSettings.fileSearchDepth === "global" ? ("Search files across projects") : ("Search files with project scope")}
           inputRef={fileSearchInputRef}
           selectedItemId={fileSearchResults[fileSearchSelectedIndex]
             ? `${fileSearchResults[fileSearchSelectedIndex]!.projectId}:${fileSearchResults[fileSearchSelectedIndex]!.sessionId}:${fileSearchResults[fileSearchSelectedIndex]!.filePath}`

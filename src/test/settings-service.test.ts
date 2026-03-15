@@ -198,7 +198,16 @@ describe("SettingsService", () => {
     const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), settingsPath, "linux");
 
     await expect(service.loadUserSettings()).resolves.toEqual({ fileSearchDepth: "global" });
-    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual({ fileSearchDepth: "global" });
+    const written = readFileSync(settingsPath, "utf8");
+    expect(written).toContain('"fileSearchDepth": "global"\t// options: "global" | "project"');
+  });
+
+  it("parses settings.json with inline comments", async () => {
+    const settingsPath = path.join(tempRoot, "settings.json");
+    const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), settingsPath, "linux");
+
+    await service.saveUserSettings({ fileSearchDepth: "project" });
+    await expect(service.loadUserSettings()).resolves.toEqual({ fileSearchDepth: "project" });
   });
 
   it("opens user settings in Visual Studio Code first on macOS", async () => {

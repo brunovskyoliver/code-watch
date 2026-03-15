@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
+import chokidar, { type FSWatcher } from "chokidar";
 import type { AppDatabase } from "@main/db/client";
 import { assistantProviderSchema, userSettingsSchema, DEFAULT_USER_SETTINGS, type AssistantProvider, type AssistantSettings, type UserSettings } from "@shared/types";
 import { settingsTable } from "@main/db/schema";
@@ -8,8 +9,12 @@ import { DEFAULT_KEYBINDINGS, keybindingsSchema, type Keybinding } from "@shared
 
 const ASSISTANT_PROVIDER_KEY = "assistant.provider";
 const DEFAULT_ASSISTANT_PROVIDER: AssistantProvider = "codex";
+type EventDispatcher = (channel: string, payload: unknown) => void;
 
 export class SettingsService {
+  private userSettingsWatcher: FSWatcher | null = null;
+  private userSettingsWatchTimer: NodeJS.Timeout | null = null;
+
   constructor(
     private readonly db: AppDatabase,
     private readonly keybindingsPath: string,
@@ -91,6 +96,55 @@ export class SettingsService {
     await this.saveAssistantProvider(DEFAULT_ASSISTANT_PROVIDER);
   }
 
+  async watchUserSettings(dispatchEvent: EventDispatcher): Promise<void> {
+    if (this.userSettingsWatcher) {
+      return;
+    }
+
+    await this.loadUserSettings();
+
+    const scheduleEmit = () => {
+      if (this.userSettingsWatchTimer) {
+        clearTimeout(this.userSettingsWatchTimer);
+      }
+
+      this.userSettingsWatchTimer = setTimeout(() => {
+        void this.loadUserSettings()
+          .then((settings) => {
+            dispatchEvent("settings.userSettingsChanged", settings);
+          })
+          .catch(() => {
+          });
+      }, 120);
+    };
+
+    this.userSettingsWatcher = chokidar.watch(this.userSettingsPath, {
+      ignoreInitial: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 100,
+        pollInterval: 25
+      }
+    });
+
+    this.userSettingsWatcher.on("add", scheduleEmit);
+    this.userSettingsWatcher.on("change", scheduleEmit);
+  }
+
+  async dispose(): Promise<void> {
+    if (this.userSettingsWatchTimer) {
+      clearTimeout(this.userSettingsWatchTimer);
+      this.userSettingsWatchTimer = null;
+    }
+
+    if (!this.userSettingsWatcher) {
+      return;
+    }
+
+    const watcher = this.userSettingsWatcher;
+    this.userSettingsWatcher = null;
+    await watcher.close();
+  }
+
   async loadAssistantSettings(): Promise<AssistantSettings> {
     const row = this.db.select().from(settingsTable).where(eq(settingsTable.key, ASSISTANT_PROVIDER_KEY)).get();
     const parsed = assistantProviderSchema.safeParse(row?.value);
@@ -144,7 +198,7 @@ export class SettingsService {
     }
 
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(stripJsoncLineComments(raw));
       const result = userSettingsSchema.safeParse(parsed);
       if (!result.success) {
         return null;
@@ -156,7 +210,13 @@ export class SettingsService {
   }
 
   private async writeUserSettingsFile(settings: UserSettings): Promise<void> {
-    await fs.writeFile(this.userSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+    const content = [
+      "{",
+      `  \"fileSearchDepth\": \"${settings.fileSearchDepth}\"\t// options: \"global\" | \"project\"`,
+      "}",
+      ""
+    ].join("\n");
+    await fs.writeFile(this.userSettingsPath, content, "utf8");
   }
 
   private escapeForDoubleQuotes(value: string): string {
@@ -231,4 +291,39 @@ export class SettingsService {
       }
     });
   }
+}
+
+function stripJsoncLineComments(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => {
+      let inString = false;
+      let escaped = false;
+
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        const nextChar = index + 1 < line.length ? line[index + 1] : "";
+
+        if (!inString && char === "/" && nextChar === "/") {
+          return line.slice(0, index);
+        }
+
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+
+        if (char === "\\") {
+          escaped = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+        }
+      }
+
+      return line;
+    })
+    .join("\n");
 }

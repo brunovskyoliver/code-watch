@@ -56,7 +56,7 @@ async function bootstrap(): Promise<void> {
   const { db } = createDatabase();
   const git = new GitService();
   const projects = new ProjectService(db, git);
-  const search = new FileSearchService(db);
+  const search = new FileSearchService(db, git);
   const reviews = new ReviewService(db, git, broadcast);
   const threads = new ThreadService(db);
   const settings = new SettingsService(db, keybindingsPath, userSettingsPath);
@@ -65,11 +65,13 @@ async function bootstrap(): Promise<void> {
   const watchers = new RepoWatcherRegistry(git, broadcast);
 
   registerIpcHandlers({ projects, search, reviews, threads, settings, codex, opencode, watchers });
+  await settings.watchUserSettings(broadcast);
 
   const projectRows = await projects.list();
   await watchers.primeExisting(projectRows.map((project) => ({ id: project.id, repoPath: project.repoPath })));
 
   app.on("before-quit", () => {
+    void settings.dispose();
     void watchers.dispose();
   });
 

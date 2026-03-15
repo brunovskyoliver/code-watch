@@ -1,6 +1,7 @@
 import { asc, desc, eq } from "drizzle-orm";
 import type { AppDatabase } from "@main/db/client";
 import { projectsTable, reviewSessionsTable, sessionFilesTable } from "@main/db/schema";
+import type { GitService } from "@main/services/git";
 import type { FileSearchResult } from "@shared/types";
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -21,7 +22,10 @@ interface ProjectFileCacheEntry {
 export class FileSearchService {
   private readonly projectFilesCache = new Map<string, ProjectFileCacheEntry>();
 
-  constructor(private readonly db: AppDatabase) {}
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly git: GitService
+  ) {}
 
   async files(query: string, requestedLimit?: number, activeProjectId?: string | null): Promise<FileSearchResult[]> {
     const normalizedQuery = query.trim();
@@ -70,6 +74,14 @@ export class FileSearchService {
   }
 
   private async loadProjectCandidates(projectId: string, projectName: string, projectRank: number): Promise<SearchCandidate[]> {
+    const project = await this.db.query.projectsTable.findFirst({
+      where: eq(projectsTable.id, projectId)
+    });
+    if (!project) {
+      this.projectFilesCache.delete(projectId);
+      return [];
+    }
+
     const latestSession = await this.db.query.reviewSessionsTable.findFirst({
       where: eq(reviewSessionsTable.projectId, projectId),
       orderBy: desc(reviewSessionsTable.lastOpenedAt)
@@ -102,7 +114,17 @@ export class FileSearchService {
       });
     }
 
-    return files.map((file) => ({
+    const workingTreeFiles = await this.git
+      .getWorkingTreeChangedFiles(project.repoPath, latestSession.id)
+      .catch(() => []);
+
+    const workingTreePaths = new Set(workingTreeFiles.map((file) => file.filePath));
+    const mergedFiles = [
+      ...workingTreeFiles.map((file, index) => ({ filePath: file.filePath, sortKey: -1000 + index })),
+      ...files.filter((file) => !workingTreePaths.has(file.filePath))
+    ];
+
+    return mergedFiles.map((file) => ({
       projectId,
       projectName,
       sessionId: latestSession.id,
