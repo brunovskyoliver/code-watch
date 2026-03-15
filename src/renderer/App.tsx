@@ -97,6 +97,7 @@ import {
   Files,
   FileDiff as FDiff,
   FolderInput,
+  GitBranch,
   Github,
   GitCommitHorizontal,
   NotebookPen,
@@ -243,7 +244,6 @@ export default function App() {
   const [draftResult, setDraftResult] = useState<GitDraftResult | null>(null);
   const [draftDialogOpen, setDraftDialogOpen] = useState(false);
   const [workflowNotifications, setWorkflowNotifications] = useState<WorkflowNotification[]>([]);
-  const baseBranchMenuRef = useRef<HTMLDivElement | null>(null);
   const gitActionsControlRef = useRef<HTMLDivElement | null>(null);
   const sidebarHeaderRef = useRef<HTMLDivElement | null>(null);
   const sidebarTitleRef = useRef<HTMLDivElement | null>(null);
@@ -592,35 +592,6 @@ export default function App() {
     setBaseBranchMenuOpen(false);
     setLoadingBaseBranches(false);
   }, [activeProjectId]);
-
-  useEffect(() => {
-    if (!isBaseBranchMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-      if (!baseBranchMenuRef.current?.contains(target)) {
-        setBaseBranchMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (matchesCommand(event, keybindings, "base-branch-menu.close")) {
-        setBaseBranchMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isBaseBranchMenuOpen, keybindings]);
 
   useEffect(
     () => () => {
@@ -1065,21 +1036,15 @@ export default function App() {
     window.addEventListener("pointerup", handlePointerUp);
   };
 
-  const toggleBaseBranchMenu = () => {
-    if (!activeProject) {
-      return;
+  const handleBaseBranchMenuOpenChange = (isOpen: boolean) => {
+    setBaseBranchMenuOpen(isOpen);
+    
+    if (isOpen && activeProject) {
+      setLoadingBaseBranches(true);
+      void listBranches(activeProject.id).finally(() => {
+        setLoadingBaseBranches(false);
+      });
     }
-
-    if (isBaseBranchMenuOpen) {
-      setBaseBranchMenuOpen(false);
-      return;
-    }
-
-    setBaseBranchMenuOpen(true);
-    setLoadingBaseBranches(true);
-    void listBranches(activeProject.id).finally(() => {
-      setLoadingBaseBranches(false);
-    });
   };
 
   const selectBaseBranch = (branch: string) => {
@@ -1087,7 +1052,6 @@ export default function App() {
       return;
     }
 
-    setBaseBranchMenuOpen(false);
     if (branch !== activeProject.defaultBaseBranch) {
       void updateBaseBranch(activeProject.id, branch);
     }
@@ -1632,50 +1596,51 @@ export default function App() {
                   </button>
                 </div>
                 <div className="topbar-meta">
-                  <div className="base-branch-control" ref={baseBranchMenuRef}>
-                    <button
-                      type="button"
-                      className="base-branch-trigger"
-                      aria-label="Base branch"
-                      aria-expanded={isBaseBranchMenuOpen}
-                      aria-haspopup="listbox"
-                      onClick={toggleBaseBranchMenu}
-                    >
-                      {activeProject.defaultBaseBranch}
-                    </button>
-                    {isBaseBranchMenuOpen ? (
-                      <div
-                        className="base-branch-menu"
-                        role="listbox"
-                        aria-label="Branch list"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onPointerMove={(event) => event.stopPropagation()}
-                        onClick={(event) => event.stopPropagation()}
-                        onWheel={(event) => event.stopPropagation()}
+                  <DropdownMenu open={isBaseBranchMenuOpen} onOpenChange={handleBaseBranchMenuOpenChange}>
+                    <div className="base-branch-control" role="group" aria-label="Base branch">
+                      <button
+                        type="button"
+                        className="base-branch-primary"
+                        onClick={() => handleBaseBranchMenuOpenChange(!isBaseBranchMenuOpen)}
                       >
+                        <GitBranch className="base-branch-icon" />
+                        <span>{activeProject.defaultBaseBranch}</span>
+                      </button>
+
+                      <DropdownMenuTrigger
+                        type="button"
+                        className="base-branch-trigger"
+                        aria-label="Open base branch menu"
+                      >
+                        <ChevronDown className="base-branch-chevron" />
+                      </DropdownMenuTrigger>
+                    </div>
+
+                    <DropdownMenuContent
+                      sideOffset={6}
+                      align="end"
+                    >
+                      <DropdownMenuGroup>
                         {loadingBaseBranches ? (
-                          <p className="base-branch-menu-state">Loading branches...</p>
+                          <div className="base-branch-menu-state">Loading branches...</div>
                         ) : baseBranchOptions.length > 0 ? (
                           baseBranchOptions.map((branch) => (
-                            <button
-                              key={branch}
-                              type="button"
-                              role="option"
-                              aria-selected={branch === activeProject.defaultBaseBranch}
-                              className={`base-branch-option ${branch === activeProject.defaultBaseBranch ? "base-branch-option-active" : ""
-                                }`}
-                              onClick={() => selectBaseBranch(branch)}
-                            >
-                              {branch}
-                            </button>
+                            <DropdownMenuItem key={branch} onClick={() => selectBaseBranch(branch)}>
+                              <span className="base-branch-menu-item-main">
+                                <GitBranch className="base-branch-menu-icon" />
+                                <span>{branch}</span>
+                              </span>
+                              {branch === activeProject.defaultBaseBranch ? (
+                                <span className="base-branch-menu-item-suffix">Current</span>
+                              ) : null}
+                            </DropdownMenuItem>
                           ))
                         ) : (
-                          <p className="base-branch-menu-state">No branches found.</p>
+                          <div className="base-branch-menu-state">No branches found.</div>
                         )}
-                      </div>
-                    ) : null}
-                  </div>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   {activeSession.dirty ? <span className="badge badge-warning">dirty</span> : null}
                 </div>
               </div>

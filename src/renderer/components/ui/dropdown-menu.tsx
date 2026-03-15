@@ -2,8 +2,8 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { cn } from "@renderer/lib/utils";
 
-export function DropdownMenu({ children }: { children: ReactNode }) {
-  return <BaseMenu.Root modal={false}>{children}</BaseMenu.Root>;
+export function DropdownMenu({ children, open, onOpenChange }: { children: ReactNode; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+  return <BaseMenu.Root modal={false} open={open} onOpenChange={onOpenChange}>{children}</BaseMenu.Root>;
 }
 
 export function DropdownMenuTrigger({ className, ...props }: ComponentPropsWithoutRef<typeof BaseMenu.Trigger>) {
