@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CodeWatchApi, GitWorkflowEvent, RepoStateEvent, ReviewSessionEvent } from "@shared/types";
+import type { CodeWatchApi, GitWorkflowEvent, RepoStateEvent, ReviewSessionEvent, UserSettingsChangedEvent } from "@shared/types";
 
 function bindEvent<T>(channel: string, listener: (payload: T) => void): () => void {
   const wrapped = (_event: Electron.IpcRendererEvent, payload: T) => listener(payload);
@@ -62,6 +62,8 @@ const api: CodeWatchApi = {
     onDirtyStateChanged: (listener: (payload: RepoStateEvent) => void) => bindEvent("repo.dirtyStateChanged", listener),
     onReviewSessionCreated: (listener: (payload: ReviewSessionEvent) => void) =>
       bindEvent("review.sessionCreated", listener),
+    onUserSettingsChanged: (listener: (payload: UserSettingsChangedEvent) => void) =>
+      bindEvent("settings.userSettingsChanged", listener),
     onGitWorkflowProgress: (listener: (payload: GitWorkflowEvent) => void) =>
       bindEvent("git.workflowProgress", listener)
   }
