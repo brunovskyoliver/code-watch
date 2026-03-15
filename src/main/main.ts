@@ -1,5 +1,6 @@
 import path from "node:path";
 import { app, BrowserWindow, shell } from "electron";
+import * as Sentry from "@sentry/electron/main";
 import log from "electron-log/main";
 import { configureAppDataPaths } from "@main/app-paths";
 import { createDatabase } from "@main/db/client";
@@ -17,6 +18,14 @@ import { RepoWatcherRegistry } from "@main/watchers/repo-watcher";
 let mainWindow: BrowserWindow | null = null;
 
 configureAppDataPaths(app);
+
+const sentryEndpoint = process.env.SENTRY_ENDPOINT?.trim();
+
+if (sentryEndpoint) {
+  Sentry.init({
+    dsn: sentryEndpoint
+  });
+}
 
 async function createMainWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
