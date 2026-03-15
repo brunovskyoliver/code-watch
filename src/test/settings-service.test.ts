@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -82,7 +82,7 @@ describe("SettingsService", () => {
     });
 
     const keybindingsPath = path.join(tempRoot, "keybindings.json");
-    const service = new SettingsService(db as never, keybindingsPath, "darwin");
+    const service = new SettingsService(db as never, keybindingsPath, path.join(tempRoot, "settings.json"), "darwin");
 
     await expect(service.openKeybindingsInEditor()).resolves.toBeUndefined();
     expect(spawnMock).toHaveBeenCalledWith(
@@ -107,7 +107,7 @@ describe("SettingsService", () => {
     });
 
     const keybindingsPath = path.join(tempRoot, "keybindings.json");
-    const service = new SettingsService(db as never, keybindingsPath, "darwin");
+    const service = new SettingsService(db as never, keybindingsPath, path.join(tempRoot, "settings.json"), "darwin");
 
     await expect(service.openKeybindingsInEditor()).resolves.toBeUndefined();
     expect(spawnMock).toHaveBeenNthCalledWith(
@@ -134,7 +134,12 @@ describe("SettingsService", () => {
       return child as never;
     });
 
-    const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), "darwin");
+    const service = new SettingsService(
+      db as never,
+      path.join(tempRoot, "keybindings.json"),
+      path.join(tempRoot, "settings.json"),
+      "darwin"
+    );
 
     await expect(service.openKeybindingsInEditor()).rejects.toThrow(
       "No supported editor found. Install Visual Studio Code or Cursor."
@@ -144,7 +149,12 @@ describe("SettingsService", () => {
   it("throws when $EDITOR is missing on non-macOS", async () => {
     delete process.env.EDITOR;
 
-    const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), "linux");
+    const service = new SettingsService(
+      db as never,
+      path.join(tempRoot, "keybindings.json"),
+      path.join(tempRoot, "settings.json"),
+      "linux"
+    );
 
     await expect(service.openKeybindingsInEditor()).rejects.toThrow(
       "$EDITOR is not set. Please set EDITOR to open keybindings."
@@ -160,16 +170,57 @@ describe("SettingsService", () => {
       return child as never;
     });
 
-    const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), "linux");
+    const service = new SettingsService(
+      db as never,
+      path.join(tempRoot, "keybindings.json"),
+      path.join(tempRoot, "settings.json"),
+      "linux"
+    );
 
     await expect(service.openKeybindingsInEditor()).rejects.toThrow("Failed to open keybindings in $EDITOR");
   });
 
   it("persists assistant provider selection", async () => {
-    const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), "linux");
+    const service = new SettingsService(
+      db as never,
+      path.join(tempRoot, "keybindings.json"),
+      path.join(tempRoot, "settings.json"),
+      "linux"
+    );
 
     expect(await service.loadAssistantSettings()).toEqual({ provider: "codex" });
     expect(await service.saveAssistantProvider("opencode")).toEqual({ provider: "opencode" });
     expect(await service.loadAssistantSettings()).toEqual({ provider: "opencode" });
+  });
+
+  it("creates settings.json with defaults when missing", async () => {
+    const settingsPath = path.join(tempRoot, "settings.json");
+    const service = new SettingsService(db as never, path.join(tempRoot, "keybindings.json"), settingsPath, "linux");
+
+    await expect(service.loadUserSettings()).resolves.toEqual({ fileSearchDepth: "global" });
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual({ fileSearchDepth: "global" });
+  });
+
+  it("opens user settings in Visual Studio Code first on macOS", async () => {
+    process.env.EDITOR = "nvim";
+    spawnMock.mockImplementation(() => {
+      const child = createSpawnChild();
+      setTimeout(() => {
+        child.emit("close", 0);
+      }, 0);
+      return child as never;
+    });
+
+    const keybindingsPath = path.join(tempRoot, "keybindings.json");
+    const settingsPath = path.join(tempRoot, "settings.json");
+    const service = new SettingsService(db as never, keybindingsPath, settingsPath, "darwin");
+
+    await expect(service.openUserSettingsInEditor()).resolves.toBeUndefined();
+    expect(spawnMock).toHaveBeenCalledWith(
+      "open",
+      ["-a", "Visual Studio Code", settingsPath],
+      expect.objectContaining({ shell: false, stdio: "ignore" })
+    );
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 });

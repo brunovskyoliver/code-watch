@@ -1,15 +1,17 @@
 import { create } from "zustand";
-import type {
-  ChangedFile,
-  FileSearchResult,
-  FileDiff,
-  PaginatedComments,
-  ProjectSummary,
-  ReviewOpenResult,
-  ReviewSessionDetail,
-  ReviewSessionSummary,
-  ThreadAnchor,
-  ThreadPreview
+import {
+  DEFAULT_USER_SETTINGS,
+  type ChangedFile,
+  type FileSearchResult,
+  type FileDiff,
+  type PaginatedComments,
+  type ProjectSummary,
+  type ReviewOpenResult,
+  type ReviewSessionDetail,
+  type ReviewSessionSummary,
+  type ThreadAnchor,
+  type ThreadPreview,
+  type UserSettings
 } from "@shared/types";
 
 interface AppState {
@@ -17,6 +19,7 @@ interface AppState {
   baseBranchesByProject: Record<string, string[]>;
   sessionsByProject: Record<string, ReviewSessionSummary[]>;
   activeProjectId: string | null;
+  userSettings: UserSettings;
   activeSession: ReviewSessionDetail | null;
   files: ChangedFile[];
   selectedFileId: string | null;
@@ -52,6 +55,7 @@ interface AppState {
   addComment: (body: string) => Promise<void>;
   resolveThread: () => Promise<void>;
   reopenThread: () => Promise<void>;
+  updateUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
   dismissComposer: () => void;
   clearError: () => void;
 }
@@ -61,6 +65,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   baseBranchesByProject: {},
   sessionsByProject: {},
   activeProjectId: null,
+  userSettings: DEFAULT_USER_SETTINGS,
   activeSession: null,
   files: [],
   selectedFileId: null,
@@ -78,8 +83,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     set({ initializing: true, error: null });
     try {
-      const projects = await window.codeWatch.projects.list();
-      set({ projects, initializing: false, activeProjectId: projects[0]?.id ?? null });
+      const [projects, userSettings] = await Promise.all([
+        window.codeWatch.projects.list(),
+        window.codeWatch.settings.loadUserSettings()
+      ]);
+
+      set({
+        projects,
+        userSettings,
+        initializing: false,
+        activeProjectId: projects[0]?.id ?? null
+      });
+
       if (projects[0]) {
         await get().selectProject(projects[0].id);
       }
@@ -335,7 +350,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   searchFiles: async (query, limit) => {
     try {
-      return await window.codeWatch.search.files(query, limit);
+      const { userSettings, activeProjectId } = get();
+      const scopedProjectId = userSettings.fileSearchDepth === "project" ? activeProjectId : null;
+      return await window.codeWatch.search.files(query, limit, scopedProjectId);
     } catch (error) {
       set({ error: toErrorMessage(error) });
       return [];
@@ -478,6 +495,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           [fileId]: previews
         }
       }));
+    } catch (error) {
+      set({ error: toErrorMessage(error) });
+    }
+  },
+  updateUserSettings: async (settings) => {
+    try {
+      const mergedSettings = { ...get().userSettings, ...settings };
+      const nextSettings = await window.codeWatch.settings.saveUserSettings(mergedSettings);
+      set({ userSettings: nextSettings, error: null });
     } catch (error) {
       set({ error: toErrorMessage(error) });
     }

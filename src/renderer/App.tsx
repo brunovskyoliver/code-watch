@@ -132,6 +132,7 @@ const FILE_SEARCH_LIMIT = 5;
 const FILE_SEARCH_DEBOUNCE_MS = 120;
 const SETTINGS_MENU_LABEL = "Settings";
 const PROVIDER_TITLE = "Provider";
+const FILE_SEARCH_SCOPE_TITLE = "File search scope";
 const NO_SUPPORTED_EDITOR_ERROR = "No supported editor found. Install Visual Studio Code or Cursor.";
 const CODEX_NOT_AVAILABLE_ERROR = "Codex CLI is unavailable. Install Codex CLI and confirm `codex app-server` works in your terminal.";
 const OPENCODE_NOT_AVAILABLE_ERROR = "OpenCode CLI is unavailable. Install OpenCode CLI and confirm `opencode app-server` works in your terminal.";
@@ -169,6 +170,7 @@ export default function App() {
     projects,
     baseBranchesByProject,
     activeProjectId,
+    userSettings,
     activeSession,
     files,
     selectedFileId,
@@ -204,6 +206,7 @@ export default function App() {
     addComment,
     resolveThread,
     reopenThread,
+    updateUserSettings,
     dismissComposer,
     clearError
   } = useAppStore();
@@ -855,6 +858,22 @@ export default function App() {
     }
   }
 
+  async function editUserSettings() {
+    try {
+      await window.codeWatch.settings.openUserSettingsInEditor();
+      const nextUserSettings = await window.codeWatch.settings.loadUserSettings();
+      useAppStore.setState({ userSettings: nextUserSettings });
+      clearError();
+    } catch (error) {
+      if (isNoSupportedEditorError(error)) {
+        setUnsupportedEditorDialogOpen(true);
+        clearError();
+        return;
+      }
+      setUiError(error, "Failed to open settings in a supported editor.");
+    }
+  }
+
   async function resetSettings() {
     try {
       await window.codeWatch.settings.reset();
@@ -881,10 +900,21 @@ export default function App() {
       setLayoutProjectId(activeProjectId);
 
       const nextKeybindings = await window.codeWatch.settings.loadKeybindings();
+      const nextUserSettings = await window.codeWatch.settings.loadUserSettings();
       setKeybindings(nextKeybindings);
+      useAppStore.setState({ userSettings: nextUserSettings });
       clearError();
     } catch (error) {
       setUiError(error, "Failed to reset settings.");
+    }
+  }
+
+  function handleFileSearchDepthChange(nextValues: string[]) {
+    const nextDepth = nextValues[0];
+    if (nextDepth === "global" || nextDepth === "project") {
+      void updateUserSettings({ fileSearchDepth: nextDepth }).catch((error) => {
+        setUiError(error, "Failed to save file search scope.");
+      });
     }
   }
 
@@ -1476,9 +1506,42 @@ export default function App() {
                       </PopoverContent>
                     </Popover>
                     <MenuSeparator />
+                    <Popover>
+                      <PopoverTrigger
+                        type="button"
+                        className="cw-menu-item sidebar-provider-menu-trigger"
+                        aria-label="Choose file search scope"
+                        openOnHover
+                        delay={100}
+                        closeDelay={80}
+                      >
+                        <span>{FILE_SEARCH_SCOPE_TITLE}</span>
+                        <ChevronRight className="sidebar-provider-menu-icon" />
+                      </PopoverTrigger>
+                      <PopoverContent side="right" align="start" sideOffset={12} alignOffset={-6}>
+                        <div className="sidebar-settings-popover" role="group" aria-label="File search scope settings">
+                          <div className="sidebar-provider-popover-layout">
+                            <p className="sidebar-settings-popover-title">{FILE_SEARCH_SCOPE_TITLE}</p>
+                            <ToggleGroup
+                              orientation="vertical"
+                              className="sidebar-provider-toggle-group"
+                              value={[userSettings.fileSearchDepth]}
+                              onValueChange={handleFileSearchDepthChange}
+                            >
+                              <Toggle value="global" className="sidebar-provider-toggle">Global</Toggle>
+                              <Toggle value="project" className="sidebar-provider-toggle">Current project</Toggle>
+                            </ToggleGroup>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <MenuSeparator />
                     <MenuGroup>
                       <MenuItem onClick={() => void editKeybindings()}>
                         <span>Edit keybindings</span>
+                      </MenuItem>
+                      <MenuItem onClick={() => void editUserSettings()}>
+                        <span>Open settings file</span>
                       </MenuItem>
                     </MenuGroup>
                     <MenuSeparator />
@@ -1834,7 +1897,7 @@ export default function App() {
             <AlertDialogHeader>
               <AlertDialogTitle>No supported editor found</AlertDialogTitle>
               <AlertDialogDescription>
-                Install Visual Studio Code or Cursor to edit keybindings from Code Watch.
+                Install Visual Studio Code or Cursor to edit settings files from Code Watch.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

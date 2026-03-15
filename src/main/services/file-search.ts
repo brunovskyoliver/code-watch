@@ -23,7 +23,7 @@ export class FileSearchService {
 
   constructor(private readonly db: AppDatabase) {}
 
-  async files(query: string, requestedLimit?: number): Promise<FileSearchResult[]> {
+  async files(query: string, requestedLimit?: number, activeProjectId?: string | null): Promise<FileSearchResult[]> {
     const normalizedQuery = query.trim();
     const limit = normalizeLimit(requestedLimit);
     if (limit <= 0) {
@@ -31,9 +31,10 @@ export class FileSearchService {
     }
 
     const projects = await this.db.select().from(projectsTable).orderBy(desc(projectsTable.lastOpenedAt));
+    const projectsToSearch = activeProjectId ? projects.filter((project) => project.id === activeProjectId) : projects;
 
     const candidateGroups = await Promise.all(
-      projects.map((project, projectRank) => this.loadProjectCandidates(project.id, project.name, projectRank))
+      projectsToSearch.map((project, projectRank) => this.loadProjectCandidates(project.id, project.name, projectRank))
     );
     const candidates = candidateGroups.flat();
 

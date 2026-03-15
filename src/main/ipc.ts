@@ -18,7 +18,8 @@ import {
   gitDraftResultSchema,
   gitRunActionSchema,
   gitRunResultSchema,
-  threadAnchorSchema
+  threadAnchorSchema,
+  userSettingsSchema
 } from "@shared/types";
 import { keybindingsSchema } from "@shared/keybindings";
 
@@ -106,10 +107,11 @@ export function registerIpcHandlers(services: {
     services.threads.reopen(z.string().min(1).parse(threadId))
   );
 
-  ipcMain.handle("search:files", async (_event, query: string, limit?: number) => {
+  ipcMain.handle("search:files", async (_event, query: string, limit?: number, activeProjectId?: string | null) => {
     const results = await services.search.files(
       z.string().max(200).parse(query),
-      limit === undefined ? undefined : z.number().int().min(1).max(20).parse(limit)
+      limit === undefined ? undefined : z.number().int().min(1).max(20).parse(limit),
+      activeProjectId === undefined || activeProjectId === null ? null : z.string().min(1).parse(activeProjectId)
     );
     return z.array(fileSearchResultSchema).parse(results);
   });
@@ -131,6 +133,18 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("settings:saveAssistantProvider", async (_event, provider: unknown) =>
     assistantSettingsSchema.parse(await services.settings.saveAssistantProvider(assistantProviderSchema.parse(provider)))
   );
+
+  ipcMain.handle("settings:loadUserSettings", async () =>
+    userSettingsSchema.parse(await services.settings.loadUserSettings())
+  );
+
+  ipcMain.handle("settings:saveUserSettings", async (_event, settings: unknown) =>
+    userSettingsSchema.parse(await services.settings.saveUserSettings(userSettingsSchema.parse(settings)))
+  );
+
+  ipcMain.handle("settings:openUserSettingsInEditor", async () => {
+    await services.settings.openUserSettingsInEditor();
+  });
 
   ipcMain.handle("assistants:codexStatus", async () => codexStatusSchema.parse(await services.codex.getStatus()));
 

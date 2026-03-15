@@ -51,7 +51,7 @@ async function bootstrap(): Promise<void> {
   log.initialize();
   log.errorHandler.startCatching();
 
-  const { keybindingsPath } = configureAppDataPaths(app);
+  const { keybindingsPath, userSettingsPath } = configureAppDataPaths(app);
 
   const { db } = createDatabase();
   const git = new GitService();
@@ -59,7 +59,7 @@ async function bootstrap(): Promise<void> {
   const search = new FileSearchService(db);
   const reviews = new ReviewService(db, git, broadcast);
   const threads = new ThreadService(db);
-  const settings = new SettingsService(db, keybindingsPath);
+  const settings = new SettingsService(db, keybindingsPath, userSettingsPath);
   const codex = new CodexAppServerService(git, broadcast);
   const opencode = new OpenCodeAppServerService(git, broadcast);
   const watchers = new RepoWatcherRegistry(git, broadcast);

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import type { AppDatabase } from "@main/db/client";
-import { assistantProviderSchema, type AssistantProvider, type AssistantSettings } from "@shared/types";
+import { assistantProviderSchema, userSettingsSchema, DEFAULT_USER_SETTINGS, type AssistantProvider, type AssistantSettings, type UserSettings } from "@shared/types";
 import { settingsTable } from "@main/db/schema";
 import { eq } from "drizzle-orm";
 import { DEFAULT_KEYBINDINGS, keybindingsSchema, type Keybinding } from "@shared/keybindings";
@@ -13,6 +13,7 @@ export class SettingsService {
   constructor(
     private readonly db: AppDatabase,
     private readonly keybindingsPath: string,
+    private readonly userSettingsPath: string,
     private readonly platform: NodeJS.Platform = process.platform
   ) {}
 
@@ -30,7 +31,7 @@ export class SettingsService {
     await this.loadKeybindings();
 
     if (this.platform === "darwin") {
-      await this.openInPreferredMacEditor();
+      await this.openInPreferredMacEditor(this.keybindingsPath);
       return;
     }
 
@@ -47,8 +48,46 @@ export class SettingsService {
     throw new Error("$EDITOR is not set. Please set EDITOR to open keybindings.");
   }
 
+  async loadUserSettings(): Promise<UserSettings> {
+    const existing = await this.readUserSettingsFile();
+    if (existing) {
+      return existing;
+    }
+
+    await this.writeUserSettingsFile(DEFAULT_USER_SETTINGS);
+    return { ...DEFAULT_USER_SETTINGS };
+  }
+
+  async saveUserSettings(settings: UserSettings): Promise<UserSettings> {
+    const validated = userSettingsSchema.parse(settings);
+    await this.writeUserSettingsFile(validated);
+    return validated;
+  }
+
+  async openUserSettingsInEditor(): Promise<void> {
+    await this.loadUserSettings();
+
+    if (this.platform === "darwin") {
+      await this.openInPreferredMacEditor(this.userSettingsPath);
+      return;
+    }
+
+    const editor = process.env.EDITOR?.trim();
+    if (editor) {
+      const command = `${editor} "${this.escapeForDoubleQuotes(this.userSettingsPath)}"`;
+      await this.spawnAndVerify(command, {
+        shell: true,
+        missingEditorMessage: "Failed to open settings in $EDITOR"
+      });
+      return;
+    }
+
+    throw new Error("$EDITOR is not set. Please set EDITOR to open settings.");
+  }
+
   async reset(): Promise<void> {
     await this.writeKeybindingsFile(DEFAULT_KEYBINDINGS);
+    await this.writeUserSettingsFile(DEFAULT_USER_SETTINGS);
     await this.saveAssistantProvider(DEFAULT_ASSISTANT_PROVIDER);
   }
 
@@ -96,18 +135,42 @@ export class SettingsService {
     await fs.writeFile(this.keybindingsPath, `${JSON.stringify(keybindings, null, 2)}\n`, "utf8");
   }
 
+  private async readUserSettingsFile(): Promise<UserSettings | null> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.userSettingsPath, "utf8");
+    } catch {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const result = userSettingsSchema.safeParse(parsed);
+      if (!result.success) {
+        return null;
+      }
+      return result.data;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeUserSettingsFile(settings: UserSettings): Promise<void> {
+    await fs.writeFile(this.userSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  }
+
   private escapeForDoubleQuotes(value: string): string {
     return value.replace(/"/g, '\\"');
   }
 
-  private async openInPreferredMacEditor(): Promise<void> {
+  private async openInPreferredMacEditor(filePath: string): Promise<void> {
     const preferredEditors = ["Visual Studio Code", "Cursor"];
 
     for (const editorName of preferredEditors) {
       try {
         await this.spawnAndVerify("open", {
-          args: ["-a", editorName, this.keybindingsPath],
-          missingEditorMessage: `Failed to open keybindings in ${editorName}`
+          args: ["-a", editorName, filePath],
+          missingEditorMessage: `Failed to open file in ${editorName}`
         });
         return;
       } catch {
