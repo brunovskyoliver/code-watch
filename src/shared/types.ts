@@ -163,6 +163,15 @@ export const assistantSettingsSchema = z.object({
   provider: assistantProviderSchema
 });
 
+export const fileSearchDepthSchema = z.enum(["global", "project"]);
+export const userSettingsSchema = z.object({
+  fileSearchDepth: fileSearchDepthSchema
+});
+
+export const DEFAULT_USER_SETTINGS = {
+  fileSearchDepth: "global" as const
+} satisfies UserSettings;
+
 const gitDraftDocumentSchema = z.object({
   title: z.string(),
   body: z.string()
@@ -225,6 +234,8 @@ export type GitDraftAction = z.infer<typeof gitDraftActionSchema>;
 export type GitRunAction = z.infer<typeof gitRunActionSchema>;
 export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
 export type AssistantSettings = z.infer<typeof assistantSettingsSchema>;
+export type FileSearchDepth = z.infer<typeof fileSearchDepthSchema>;
+export type UserSettings = z.infer<typeof userSettingsSchema>;
 export type GitDraftResult = z.infer<typeof gitDraftResultSchema>;
 export type CodexStatus = z.infer<typeof codexStatusSchema>;
 export type GitRunResult = z.infer<typeof gitRunResultSchema>;
@@ -261,7 +272,7 @@ export interface CodeWatchApi {
     reopen: (threadId: string) => Promise<ThreadPreview>;
   };
   search: {
-    files: (query: string, limit?: number) => Promise<FileSearchResult[]>;
+    files: (query: string, limit?: number, activeProjectId?: string | null) => Promise<FileSearchResult[]>;
   };
   settings: {
     loadKeybindings: () => Promise<z.infer<typeof keybindingsSchema>>;
@@ -269,6 +280,9 @@ export interface CodeWatchApi {
     reset: () => Promise<void>;
     loadAssistantSettings: () => Promise<AssistantSettings>;
     saveAssistantProvider: (provider: AssistantProvider) => Promise<AssistantSettings>;
+    loadUserSettings: () => Promise<UserSettings>;
+    saveUserSettings: (settings: UserSettings) => Promise<UserSettings>;
+    openUserSettingsInEditor: () => Promise<void>;
   };
   assistants: {
     codexStatus: () => Promise<CodexStatus>;

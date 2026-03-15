@@ -34,14 +34,17 @@ const api: CodeWatchApi = {
     reopen: (threadId) => ipcRenderer.invoke("threads:reopen", threadId)
   },
   search: {
-    files: (query, limit) => ipcRenderer.invoke("search:files", query, limit)
+    files: (query, limit, activeProjectId) => ipcRenderer.invoke("search:files", query, limit, activeProjectId)
   },
   settings: {
     loadKeybindings: () => ipcRenderer.invoke("settings:loadKeybindings"),
     openKeybindingsInEditor: () => ipcRenderer.invoke("settings:openKeybindingsInEditor"),
     reset: () => ipcRenderer.invoke("settings:reset"),
     loadAssistantSettings: () => ipcRenderer.invoke("settings:loadAssistantSettings"),
-    saveAssistantProvider: (provider) => ipcRenderer.invoke("settings:saveAssistantProvider", provider)
+    saveAssistantProvider: (provider) => ipcRenderer.invoke("settings:saveAssistantProvider", provider),
+    loadUserSettings: () => ipcRenderer.invoke("settings:loadUserSettings"),
+    saveUserSettings: (settings) => ipcRenderer.invoke("settings:saveUserSettings", settings),
+    openUserSettingsInEditor: () => ipcRenderer.invoke("settings:openUserSettingsInEditor")
   },
   assistants: {
     codexStatus: () => ipcRenderer.invoke("assistants:codexStatus"),
