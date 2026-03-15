@@ -530,8 +530,14 @@ async function hydrateReview(
       nextOpenFiles.push(selectedFileId);
     }
 
+    const nextProject = openResult.detail.project;
+    const knownProject = state.projects.some((project) => project.id === nextProject.id);
+
     return {
       loadingReview: false,
+      projects: knownProject
+        ? state.projects.map((project) => (project.id === nextProject.id ? nextProject : project))
+        : [...state.projects, nextProject],
       activeSession: openResult.detail,
       files,
       selectedFileId,

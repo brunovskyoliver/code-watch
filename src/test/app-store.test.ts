@@ -12,7 +12,7 @@ import type {
   ThreadPreview
 } from "@shared/types";
 
-function makeProject(headSha: string): ProjectSummary {
+function makeProject(headSha: string, aheadCount = 0): ProjectSummary {
   return {
     id: "project_1",
     name: "demo",
@@ -24,7 +24,8 @@ function makeProject(headSha: string): ProjectSummary {
     lastOpenedAt: 1,
     currentBranch: "feature/demo",
     headSha,
-    dirty: false
+    dirty: false,
+    aheadCount
   };
 }
 
@@ -42,10 +43,10 @@ function makeSessionSummary(id: string, headSha: string): ReviewSessionSummary {
   };
 }
 
-function makeDetail(id: string, headSha: string): ReviewSessionDetail {
+function makeDetail(id: string, headSha: string, aheadCount = 0): ReviewSessionDetail {
   return {
     session: makeSessionSummary(id, headSha),
-    project: makeProject(headSha),
+    project: makeProject(headSha, aheadCount),
     dirty: false
   };
 }
@@ -133,19 +134,28 @@ describe("app-store", () => {
       settings: {
         loadKeybindings: vi.fn(async () => []),
         openKeybindingsInEditor: vi.fn(async () => undefined),
-        reset: vi.fn(async () => undefined)
+        reset: vi.fn(async () => undefined),
+        loadAssistantSettings: vi.fn(async () => ({ provider: "codex" as const })),
+        saveAssistantProvider: vi.fn(async () => ({ provider: "codex" as const })),
+        loadUserSettings: vi.fn(async () => ({ fileSearchDepth: "global" as const })),
+        saveUserSettings: vi.fn(async () => ({ fileSearchDepth: "global" as const })),
+        openUserSettingsInEditor: vi.fn(async () => undefined)
       },
       assistants: {
         codexStatus: vi.fn(async () => ({ available: false, version: null, reason: "missing" })),
+        opencodeStatus: vi.fn(async () => ({ available: false, version: null, reason: "missing" })),
         draftGitArtifacts: vi.fn(),
-        runGitAction: vi.fn()
+        draftGitArtifactsWithProvider: vi.fn(),
+        runGitAction: vi.fn(),
+        runGitActionWithProvider: vi.fn()
       },
       events: {
         onRepoChanged: vi.fn(() => () => undefined),
         onBranchChanged: vi.fn(() => () => undefined),
         onDirtyStateChanged: vi.fn(() => () => undefined),
         onReviewSessionCreated: vi.fn(() => () => undefined),
-        onGitWorkflowProgress: vi.fn(() => () => undefined)
+        onGitWorkflowProgress: vi.fn(() => () => undefined),
+        onUserSettingsChanged: vi.fn(() => () => undefined)
       }
     };
 
@@ -183,5 +193,20 @@ describe("app-store", () => {
     expect(state.activeSession?.session.id).toBe("session_live_new");
     expect(state.sessionsByProject.project_1?.at(0)?.id).toBe("session_live_new");
     expect(state.selectedFileId).toBe("file_1");
+  });
+
+  it("refreshes the active project summary when review hydration returns a new ahead count", async () => {
+    await useAppStore.getState().selectProject("project_1");
+
+    liveResult = {
+      created: false,
+      detail: makeDetail("session_live", "head_live", 1)
+    };
+
+    await useAppStore.getState().refreshProject("project_1");
+
+    const state = useAppStore.getState();
+    expect(state.activeSession?.project.aheadCount).toBe(1);
+    expect(state.projects.find((project) => project.id === "project_1")?.aheadCount).toBe(1);
   });
 });

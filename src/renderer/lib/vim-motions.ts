@@ -4,7 +4,7 @@ export interface VimCursor {
   preferredColumn: number;
 }
 
-export type VimMotionKey = "h" | "j" | "k" | "l" | "w" | "b" | "W" | "B" | "0" | "$" | "*";
+export type VimMotionKey = "h" | "j" | "k" | "l" | "w" | "b" | "W" | "B" | "0" | "$" | "*" | "G";
 
 type CharacterClass = "space" | "keyword" | "symbol" | "word";
 
@@ -45,9 +45,28 @@ export function moveVimCursor(lines: readonly string[], cursor: VimCursor, key: 
       return moveToPreviousToken(normalizedLines, safeCursor, true);
     case "*":
       return moveToNextSearchMatch(normalizedLines, safeCursor);
+    case "G":
+      return moveVimCursorToLine(normalizedLines, safeCursor, normalizedLines.length - 1);
     default:
       return safeCursor;
   }
+}
+
+export function moveVimCursorByLines(lines: readonly string[], cursor: VimCursor, delta: number): VimCursor {
+  return moveVertically(normalizeLines(lines), clampCursor(normalizeLines(lines), cursor), delta);
+}
+
+export function moveVimCursorToLine(lines: readonly string[], cursor: VimCursor, lineIndex: number): VimCursor {
+  const normalizedLines = normalizeLines(lines);
+  const safeCursor = clampCursor(normalizedLines, cursor);
+  const nextLineIndex = clampNumber(lineIndex, 0, normalizedLines.length - 1);
+  const nextColumn = clampNumber(safeCursor.preferredColumn, 0, getMaxColumn(getLineAt(normalizedLines, nextLineIndex)));
+
+  return {
+    lineIndex: nextLineIndex,
+    column: nextColumn,
+    preferredColumn: safeCursor.preferredColumn
+  } satisfies VimCursor;
 }
 
 function moveVertically(lines: readonly string[], cursor: VimCursor, delta: number): VimCursor {

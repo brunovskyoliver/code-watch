@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createVimCursor, moveVimCursor } from "@renderer/lib/vim-motions";
+import { createVimCursor, moveVimCursor, moveVimCursorByLines, moveVimCursorToLine } from "@renderer/lib/vim-motions";
 
 describe("vim-motions", () => {
   it("moves by lowercase word boundaries across punctuation", () => {
@@ -64,6 +64,32 @@ describe("vim-motions", () => {
 
     cursor = moveVimCursor(lines, cursor, "0");
     expect(cursor).toMatchObject({ lineIndex: 0, column: 0 });
+  });
+
+  it("jumps to an explicit line while preserving the preferred column", () => {
+    const lines = ["+one", "+medium", "+very long line"];
+    let cursor = createVimCursor(lines);
+
+    cursor = moveVimCursor(lines, cursor, "$");
+    cursor = moveVimCursorToLine(lines, cursor, 2);
+    expect(cursor).toMatchObject({ lineIndex: 2, column: lines[0]!.length - 1, preferredColumn: lines[0]!.length - 1 });
+
+    cursor = moveVimCursor(lines, cursor, "G");
+    expect(cursor).toMatchObject({ lineIndex: 2 });
+
+    cursor = moveVimCursorToLine(lines, cursor, 0);
+    expect(cursor).toMatchObject({ lineIndex: 0, column: lines[0]!.length - 1 });
+  });
+
+  it("moves by an arbitrary line delta for half-page motions", () => {
+    const lines = ["+1", "+2", "+3", "+4", "+5"];
+    let cursor = createVimCursor(lines);
+
+    cursor = moveVimCursorByLines(lines, cursor, 3);
+    expect(cursor).toMatchObject({ lineIndex: 3, column: 0 });
+
+    cursor = moveVimCursorByLines(lines, cursor, -2);
+    expect(cursor).toMatchObject({ lineIndex: 1, column: 0 });
   });
 
   it("searches the next occurrence of the token under the cursor and wraps", () => {

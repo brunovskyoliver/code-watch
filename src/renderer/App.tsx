@@ -44,7 +44,14 @@ import {
   type ReviewLayoutState,
   type ReviewPaneId
 } from "@renderer/layout/review-layout";
-import { createVimCursor, moveVimCursor, type VimCursor, type VimMotionKey } from "@renderer/lib/vim-motions";
+import {
+  createVimCursor,
+  moveVimCursor,
+  moveVimCursorByLines,
+  moveVimCursorToLine,
+  type VimCursor,
+  type VimMotionKey
+} from "@renderer/lib/vim-motions";
 import {
   Menu,
   MenuGroup,
@@ -1945,6 +1952,7 @@ function DiffViewer({
   const [vimCursor, setVimCursor] = useState<VimCursor | null>(() =>
     lineTexts.length > 0 ? createVimCursor(lineTexts) : null
   );
+  const [pendingGPrefix, setPendingGPrefix] = useState(false);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -1954,6 +1962,7 @@ function DiffViewer({
 
   useEffect(() => {
     setVimCursor(lineTexts.length > 0 ? createVimCursor(lineTexts) : null);
+    setPendingGPrefix(false);
   }, [lineTexts]);
 
   useEffect(() => {
@@ -1970,18 +1979,48 @@ function DiffViewer({
   }, [navigableLines, rowVirtualizer, vimCursor]);
 
   const handleDiffKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!isSupportedDiffMotionKey(event.nativeEvent) || isEditableTarget(event.target)) {
+    if (isEditableTarget(event.target) || lineTexts.length === 0) {
       return;
     }
 
-    if (window.getSelection()?.type === "Range" || lineTexts.length === 0) {
+    if (window.getSelection()?.type === "Range") {
       return;
     }
 
     const currentCursor = vimCursor ?? createVimCursor(lineTexts);
+    if (pendingGPrefix) {
+      setPendingGPrefix(false);
+      if (event.key === "g") {
+        event.preventDefault();
+        setVimCursor(moveVimCursorToLine(lineTexts, currentCursor, 0));
+      }
+      return;
+    }
+
+    if (event.key === "g" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      setPendingGPrefix(true);
+      return;
+    }
+
+    if (isHalfPageDown(event.nativeEvent)) {
+      event.preventDefault();
+      setVimCursor(moveVimCursorByLines(lineTexts, currentCursor, getHalfPageLineCount(parentRef.current)));
+      return;
+    }
+
+    if (isHalfPageUp(event.nativeEvent)) {
+      event.preventDefault();
+      setVimCursor(moveVimCursorByLines(lineTexts, currentCursor, -getHalfPageLineCount(parentRef.current)));
+      return;
+    }
+
+    if (!isSupportedDiffMotionKey(event.nativeEvent)) {
+      return;
+    }
+
     const nextCursor = moveVimCursor(lineTexts, currentCursor, event.key as VimMotionKey);
     event.preventDefault();
-
     if (nextCursor.lineIndex === currentCursor.lineIndex && nextCursor.column === currentCursor.column) {
       return;
     }
@@ -2012,6 +2051,9 @@ function DiffViewer({
         onKeyDown={handleDiffKeyDown}
         onMouseDownCapture={(event) => {
           event.currentTarget.focus();
+        }}
+        onFocus={() => {
+          setPendingGPrefix(false);
         }}
       >
         <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", marginLeft: "-10px", marginRight: "10px" }}>
@@ -2046,6 +2088,10 @@ function DiffViewer({
                 key={row.id}
                 className={`diff-line diff-line-${row.line.kind} ${isActiveLine ? "diff-line-active" : ""}`}
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
+                tabIndex={-1}
+                onMouseDown={(event) => {
+                  event.currentTarget.focus();
+                }}
                 onClick={() => {
                   if (navigableLine) {
                     const maxColumn = Math.max(0, navigableLine.text.length - 1);
@@ -2220,7 +2266,21 @@ function isSupportedDiffMotionKey(event: KeyboardEvent): boolean {
     || event.key === "B"
     || event.key === "0"
     || event.key === "$"
-    || event.key === "*";
+    || event.key === "*"
+    || event.key === "G";
+}
+
+function isHalfPageDown(event: KeyboardEvent): boolean {
+  return event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "d";
+}
+
+function isHalfPageUp(event: KeyboardEvent): boolean {
+  return event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "u";
+}
+
+function getHalfPageLineCount(container: HTMLDivElement | null): number {
+  const viewportHeight = container?.clientHeight ?? 0;
+  return Math.max(1, Math.floor(viewportHeight / 56));
 }
 
 function shortSha(sha: string): string {
