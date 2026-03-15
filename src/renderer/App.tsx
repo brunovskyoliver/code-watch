@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   startTransition,
@@ -43,6 +44,7 @@ import {
   type ReviewLayoutState,
   type ReviewPaneId
 } from "@renderer/layout/review-layout";
+import { createVimCursor, moveVimCursor, type VimCursor, type VimMotionKey } from "@renderer/lib/vim-motions";
 import {
   Menu,
   MenuGroup,
@@ -1919,12 +1921,73 @@ function DiffViewer({
   const parentRef = useRef<HTMLDivElement | null>(null);
   const { rows, isTruncated, renderedLineCount, totalLineCount } = useMemo(() => flattenDiffRows(diff), [diff]);
   const threadMap = useMemo(() => groupThreadsByLine(threadPreviews), [threadPreviews]);
+  const navigableLines = useMemo(() => {
+    const entries: Array<{ lineIndex: number; rowIndex: number; text: string }> = [];
+    let lineIndex = 0;
+    rows.forEach((row, rowIndex) => {
+      if (row.type !== "line") {
+        return;
+      }
+      entries.push({
+        lineIndex,
+        rowIndex,
+        text: getDisplayLineText(row.line)
+      });
+      lineIndex += 1;
+    });
+    return entries;
+  }, [rows]);
+  const navigableLineByRowIndex = useMemo(
+    () => new Map(navigableLines.map((entry) => [entry.rowIndex, entry])),
+    [navigableLines]
+  );
+  const lineTexts = useMemo(() => navigableLines.map((entry) => entry.text), [navigableLines]);
+  const [vimCursor, setVimCursor] = useState<VimCursor | null>(() =>
+    lineTexts.length > 0 ? createVimCursor(lineTexts) : null
+  );
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => (rows[index]?.type === "hunk" ? 36 : 28),
     overscan: 16
   });
+
+  useEffect(() => {
+    setVimCursor(lineTexts.length > 0 ? createVimCursor(lineTexts) : null);
+  }, [lineTexts]);
+
+  useEffect(() => {
+    if (!vimCursor) {
+      return;
+    }
+
+    const activeLine = navigableLines[vimCursor.lineIndex];
+    if (!activeLine) {
+      return;
+    }
+
+    rowVirtualizer.scrollToIndex(activeLine.rowIndex, { align: "auto" });
+  }, [navigableLines, rowVirtualizer, vimCursor]);
+
+  const handleDiffKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!isSupportedDiffMotionKey(event.nativeEvent) || isEditableTarget(event.target)) {
+      return;
+    }
+
+    if (window.getSelection()?.type === "Range" || lineTexts.length === 0) {
+      return;
+    }
+
+    const currentCursor = vimCursor ?? createVimCursor(lineTexts);
+    const nextCursor = moveVimCursor(lineTexts, currentCursor, event.key as VimMotionKey);
+    event.preventDefault();
+
+    if (nextCursor.lineIndex === currentCursor.lineIndex && nextCursor.column === currentCursor.column) {
+      return;
+    }
+
+    setVimCursor(nextCursor);
+  };
 
   if (diff.isBinary) {
     return (
@@ -1942,7 +2005,15 @@ function DiffViewer({
           Showing first {renderedLineCount} of {totalLineCount} lines for performance.
         </div>
       ) : null}
-      <div ref={parentRef} className="virtual-scroll diff-scroll">
+      <div
+        ref={parentRef}
+        className="virtual-scroll diff-scroll"
+        tabIndex={0}
+        onKeyDown={handleDiffKeyDown}
+        onMouseDownCapture={(event) => {
+          event.currentTarget.focus();
+        }}
+      >
         <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", marginLeft: "-10px", marginRight: "10px" }}>
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const row = rows[virtualRow.index];
@@ -1963,6 +2034,8 @@ function DiffViewer({
             }
 
             const threadKey = getThreadKey(row.line.oldLineNumber, row.line.newLineNumber);
+            const navigableLine = navigableLineByRowIndex.get(virtualRow.index) ?? null;
+            const isActiveLine = navigableLine !== null && vimCursor?.lineIndex === navigableLine.lineIndex;
             const threads = threadMap.get(threadKey) ?? [];
             const firstThread = threads[0];
             const anchor = toAnchor(diff.filePath, row.line);
@@ -1971,9 +2044,18 @@ function DiffViewer({
             return (
               <button
                 key={row.id}
-                className={`diff-line diff-line-${row.line.kind}`}
+                className={`diff-line diff-line-${row.line.kind} ${isActiveLine ? "diff-line-active" : ""}`}
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                 onClick={() => {
+                  if (navigableLine) {
+                    const maxColumn = Math.max(0, navigableLine.text.length - 1);
+                    setVimCursor((currentCursor) => ({
+                      lineIndex: navigableLine.lineIndex,
+                      column: Math.min(currentCursor?.column ?? 0, maxColumn),
+                      preferredColumn: Math.min(currentCursor?.preferredColumn ?? 0, maxColumn)
+                    }));
+                  }
+
                   if (canThread) {
                     onCreateThread({ ...anchor, sessionId });
                   }
@@ -1981,7 +2063,7 @@ function DiffViewer({
               >
                 <span className="line-number">{row.line.oldLineNumber ?? ""}</span>
                 <span className="line-number">{row.line.newLineNumber ?? ""}</span>
-                <code>{row.line.kind === "add" ? "+" : row.line.kind === "delete" ? "-" : " "}{row.line.text}</code>
+                <code>{renderDiffLineText(getDisplayLineText(row.line), isActiveLine ? vimCursor?.column ?? 0 : null)}</code>
                 {firstThread ? (
                   <span
                     className="thread-chip"
@@ -2102,6 +2184,43 @@ function toAnchor(filePath: string, line: DiffLine): Omit<ThreadAnchor, "session
     hunkHeader: line.hunkHeader,
     lineContentHash: line.lineContentHash
   };
+}
+
+function getDisplayLineText(line: DiffLine): string {
+  return `${line.kind === "add" ? "+" : line.kind === "delete" ? "-" : " "}${line.text}`;
+}
+
+function renderDiffLineText(text: string, activeColumn: number | null) {
+  if (activeColumn === null) {
+    return text;
+  }
+
+  const safeColumn = clamp(activeColumn, 0, Math.max(0, text.length - 1));
+  return (
+    <>
+      {text.slice(0, safeColumn)}
+      <span className="vim-caret">{text[safeColumn] ?? " "}</span>
+      {text.slice(safeColumn + 1)}
+    </>
+  );
+}
+
+function isSupportedDiffMotionKey(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+
+  return event.key === "h"
+    || event.key === "j"
+    || event.key === "k"
+    || event.key === "l"
+    || event.key === "w"
+    || event.key === "b"
+    || event.key === "W"
+    || event.key === "B"
+    || event.key === "0"
+    || event.key === "$"
+    || event.key === "*";
 }
 
 function shortSha(sha: string): string {
