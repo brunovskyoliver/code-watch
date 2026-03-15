@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/electron/renderer";
 import App from "@renderer/App";
 import "@renderer/index.css";
 
-const sentryEndpoint = process.env.SENTRY_ENDPOINT?.trim();
+const sentryEndpoint = window.codeWatchEnv?.sentryEndpoint?.trim();
 
 if (sentryEndpoint) {
   Sentry.init({

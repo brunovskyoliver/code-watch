@@ -150,7 +150,12 @@ describe("app-store", () => {
     };
 
     Object.defineProperty(globalThis, "window", {
-      value: { codeWatch: api },
+      value: {
+        codeWatch: api,
+        codeWatchEnv: {
+          sentryEndpoint: null
+        }
+      },
       configurable: true,
       writable: true
     });

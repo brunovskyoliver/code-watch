@@ -70,9 +70,15 @@ const api: CodeWatchApi = {
 };
 
 contextBridge.exposeInMainWorld("codeWatch", api);
+contextBridge.exposeInMainWorld("codeWatchEnv", {
+  sentryEndpoint: process.env.SENTRY_ENDPOINT?.trim() ?? null
+});
 
 declare global {
   interface Window {
     codeWatch: CodeWatchApi;
+    codeWatchEnv: {
+      sentryEndpoint: string | null;
+    };
   }
 }
