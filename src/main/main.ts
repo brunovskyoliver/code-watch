@@ -27,6 +27,7 @@ if (sentryEndpoint) {
   });
 }
 
+
 async function createMainWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1600,
