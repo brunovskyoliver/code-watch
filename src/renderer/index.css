@@ -699,8 +699,9 @@ body.is-resizing .sidebar-resizer::before {
 }
 
 .cw-dropdown-menu-content {
-  width: var(--git-actions-width, 180px);
-  min-width: var(--git-actions-width, 180px);
+  width: var(--git-actions-width, auto);
+  min-width: var(--git-actions-width, 200px);
+  max-width: 400px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(17, 19, 23, 0.98);
@@ -1269,78 +1270,94 @@ body.is-resizing .pane-resizer::before {
 }
 
 .base-branch-control {
-  position: relative;
-  z-index: 12;
-  isolation: isolate;
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.base-branch-primary,
+.base-branch-trigger {
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.base-branch-primary {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 24px;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 26px;
   padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  font-weight: 540;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.base-branch-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 
 .base-branch-trigger {
-  min-width: 88px;
-  border: 0;
-  color: var(--accent);
-  background: transparent;
-  text-align: left;
+  min-width: 28px;
+  flex: 0 0 28px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
+.base-branch-primary:hover,
+.base-branch-trigger:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.base-branch-primary:focus-visible,
 .base-branch-trigger:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.24);
-  outline-offset: 2px;
-  border-radius: 8px;
+  outline: 1px solid rgba(255, 255, 255, 0.3);
+  outline-offset: -1px;
 }
 
-.base-branch-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-  max-height: 280px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(18, 20, 24, 0.97);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-  pointer-events: auto;
+.base-branch-chevron {
+  width: 11px;
+  height: 11px;
+  color: var(--muted-strong);
 }
 
-.base-branch-option {
-  width: 100%;
-  border: 0;
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: transparent;
-  color: var(--accent);
-  text-align: left;
-  cursor: pointer;
+.base-branch-menu-item-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex: 1;
 }
 
-.base-branch-option:hover {
-  background: rgba(255, 255, 255, 0.08);
+.base-branch-menu-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
-.base-branch-option-active {
-  background: rgba(255, 255, 255, 0.12);
+.base-branch-menu-item-suffix {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .base-branch-menu-state {
-  margin: 0;
   padding: 8px 10px;
   color: var(--muted);
   font-size: 12px;
+  text-align: center;
 }
 
 .empty-state,
