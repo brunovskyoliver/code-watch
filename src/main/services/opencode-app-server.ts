@@ -163,7 +163,7 @@ export class OpenCodeAppServerService extends CodexAppServerService {
 
   private async resolvePreferredModel(): Promise<string | null> {
     // TODO: do i really want this?
-    if (this.model) {
+    if (this.model != null) {
       return this.model;
     }
 
