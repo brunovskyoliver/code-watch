@@ -74,6 +74,7 @@ import {
   AlertDialogPopup,
   AlertDialogTitle
 } from "@renderer/components/ui/alert-dialog";
+import { canPushCurrentBranch } from "@renderer/git-actions";
 import { matchesKeybinding } from "@renderer/keybindings";
 import { useAppStore } from "@renderer/store/app-store";
 import { DEFAULT_KEYBINDINGS, type Keybinding } from "@shared/keybindings";
@@ -267,7 +268,11 @@ export default function App() {
     ? (opencodeStatus?.version ? `OpenCode ${opencodeStatus.version}` : "OpenCode CLI")
     : (codexStatus?.version ? `Codex ${codexStatus.version}` : "Codex CLI");
   const hasUncommittedChanges = activeSession?.dirty ?? false;
-  const canPushBranch = (activeProject?.aheadCount ?? 0) > 0;
+  const canPushBranch = canPushCurrentBranch({
+    project: activeProject,
+    session: activeSession,
+    files
+  });
   const gitPrimaryLabel = hasUncommittedChanges ? "Commit" : (canPushBranch ? "Push" : "Up to Date");
   const canRunPush = hasUncommittedChanges || canPushBranch;
   const activeProjectBranches = activeProjectId ? baseBranchesByProject[activeProjectId] ?? [] : [];

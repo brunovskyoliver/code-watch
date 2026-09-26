@@ -172,7 +172,7 @@ export class CodexAppServerService {
           action: input.action,
           stage: "committing",
           title: "Committing changes",
-          message: "Codex is drafting a commit message and preparing the commit.",
+          message: `${this.assistantLabel} is drafting a commit message and preparing the commit.`,
           prUrl: null
         });
 
@@ -184,7 +184,7 @@ export class CodexAppServerService {
         });
         const commit = draft.commit;
         if (!commit) {
-          throw new Error("Codex did not return a commit draft.");
+          throw new Error(`${this.assistantLabel} did not return a commit draft.`);
         }
 
         await this.git.commit(input.repoPath, commit.title, commit.body);
@@ -229,7 +229,7 @@ export class CodexAppServerService {
           action: input.action,
           stage: "committing",
           title: "Committing changes",
-          message: "Codex is drafting a commit message and preparing the commit.",
+          message: `${this.assistantLabel} is drafting a commit message and preparing the commit.`,
           prUrl: null
         });
 
@@ -241,7 +241,7 @@ export class CodexAppServerService {
         });
         const commit = draft.commit;
         if (!commit) {
-          throw new Error("Codex did not return a commit draft.");
+          throw new Error(`${this.assistantLabel} did not return a commit draft.`);
         }
 
         await this.git.commit(input.repoPath, commit.title, commit.body);
@@ -289,7 +289,7 @@ export class CodexAppServerService {
         action: input.action,
         stage: "creating-pr",
         title: "Creating pull request",
-        message: "Codex is drafting the PR, then GitHub CLI will create it.",
+        message: `${this.assistantLabel} is drafting the PR, then GitHub CLI will create it.`,
         prUrl: null
       });
 
@@ -301,7 +301,7 @@ export class CodexAppServerService {
       });
       const pr = draft.pr;
       if (!pr) {
-        throw new Error("Codex did not return a PR draft.");
+        throw new Error(`${this.assistantLabel} did not return a PR draft.`);
       }
 
       const prUrl = await this.git.createPullRequest(input.repoPath, pr.title, pr.body);

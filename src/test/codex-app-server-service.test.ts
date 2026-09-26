@@ -504,6 +504,50 @@ describe("OpenCodeAppServerService", () => {
     expect(result.pr).toBeNull();
   });
 
+  it("uses the OpenCode label in commit workflow notifications", async () => {
+    const dispatchEvent = vi.fn();
+    const git = {
+      stagePaths: vi.fn(async () => undefined),
+      getCommitSubjects: vi.fn(async () => ["Use OpenCode for git drafting"]),
+      getDiffStat: vi.fn(async () => " App.tsx | 4 ++--"),
+      getCombinedDiff: vi.fn(async () => "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+opencode"),
+      getWorkingTreeSnapshot: vi.fn(async () => ({
+        status: " M src/renderer/App.tsx",
+        stagedStat: "",
+        unstagedStat: " App.tsx | 4 ++--",
+        stagedDiff: "",
+        unstagedDiff: "diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx\n+opencode"
+      })),
+      commit: vi.fn(async () => undefined)
+    } as unknown as GitService;
+
+    const service = new OpenCodeAppServerService(git, dispatchEvent);
+    vi.spyOn(service, "getStatus").mockResolvedValue({ available: true, version: "1.2.20", reason: null });
+    vi.spyOn(service as unknown as { runStructuredTurn: (input: { cwd: string; prompt: string }) => Promise<unknown> }, "runStructuredTurn")
+      .mockResolvedValue({
+        commit: {
+          title: "Use OpenCode for git drafting",
+          body: "Mirror codex app-server behavior with OpenCode run mode."
+        }
+      });
+
+    const result = await service.runGitAction({
+      repoPath: detail.project.repoPath,
+      session: detail,
+      files,
+      action: "commit"
+    });
+
+    expect(result.committed).toBe(true);
+    expect(dispatchEvent).toHaveBeenCalledWith("git.workflowProgress", expect.objectContaining({
+      stage: "committing",
+      message: "OpenCode is drafting a commit message and preparing the commit."
+    }));
+    expect(dispatchEvent).not.toHaveBeenCalledWith("git.workflowProgress", expect.objectContaining({
+      message: expect.stringContaining("Codex")
+    }));
+  });
+
   it("builds tool-restricted inline config for OpenCode run", async () => {
     vi.mocked(execFile).mockImplementation((...args) => {
       const callback = typeof args[2] === "function" ? args[2] : args[3];

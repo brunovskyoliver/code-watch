@@ -352,7 +352,7 @@ export class GitService {
     const trimmedTitle = title.trim();
     const trimmedBody = body.trim();
     if (!trimmedTitle) {
-      throw new Error("Codex returned an empty commit title.");
+      throw new Error("The assistant returned an empty commit title.");
     }
 
     const args = trimmedBody.length > 0
@@ -371,7 +371,7 @@ export class GitService {
     const rootPath = await this.assertGitRepo(repoPath);
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      throw new Error("Codex returned an empty PR title.");
+      throw new Error("The assistant returned an empty PR title.");
     }
 
     return (await this.runCommand("gh", ["pr", "create", "--title", trimmedTitle, "--body", body], rootPath)).trim();
